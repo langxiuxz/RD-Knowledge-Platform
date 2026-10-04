@@ -2919,19 +2919,25 @@ form-data: file=@avatar.png&type=AVATAR
 
 | 参数名 | 类型 | 是否必须 | 备注 |
 | --- | --- | --- | --- |
-| documentId | number | 是 | 文档ID |
+| userId | number | 是 | 由Spring Boot认证上下文传递的用户ID，FastAPI不得从浏览器获取 |
 | knowledgeBaseId | number | 是 | 知识库ID |
-| fileUrl | string | 是 | 文件地址 |
-| fileType | string | 是 | 类型 |
+| documentId | number | 是 | 文档ID |
+| taskId | string | 是 | Spring Boot生成的当前文档处理任务ID |
+| fileUrl | string | 是 | Spring Boot内部文件读取地址 |
+| fileType | string | 是 | pdf/docx/txt/md |
+| fileName | string | 是 | 原始文件名metadata，不作为物理路径 |
 
 请求参数样例：
 
 ```text
 {
-  "documentId": 101,
+  "userId": 1,
   "knowledgeBaseId": 12,
-  "fileUrl": "https://storage.internal/docs/101.pdf",
-  "fileType": "pdf"
+  "documentId": 101,
+  "taskId": "task_8f31",
+  "fileUrl": "http://localhost:8080/internal/files/2f2b6c6e-101.pdf",
+  "fileType": "pdf",
+  "fileName": "Spring学习笔记.pdf"
 }
 ```
 
@@ -2958,9 +2964,44 @@ form-data: file=@avatar.png&type=AVATAR
 }
 ```
 
-## 8.4 生成测验题
+## 8.4 文档相关内部接口补充
 
-### 8.4.1 基本信息
+以下接口只允许Spring Boot与FastAPI之间调用，必须携带：
+
+`X-Internal-Token: <configured internal token>`
+
+浏览器不得直接访问这些接口。
+
+### 8.4.1 Spring Boot内部文件读取
+
+| 项目 | 内容 |
+| --- | --- |
+| 请求路径 | /internal/files/{storageKey} |
+| 请求方式 | GET |
+| 接口描述 | FastAPI通过该接口读取已登记文档内容；storageKey必须来自已登记的sa_document。 |
+
+### 8.4.2 文档处理进度回调
+
+| 项目 | 内容 |
+| --- | --- |
+| 请求路径 | /internal/callbacks/documents/{documentId}/progress |
+| 请求方式 | POST |
+| 请求体 | taskId、status、progress、chunkCount、errorMessage |
+| 状态 | PARSING、CHUNKING、EMBEDDING、READY、FAILED |
+
+Spring Boot只接受 `taskId == sa_document.current_task_id` 的回调；旧任务回调被忽略，重复回调幂等。READY必须为100，FAILED必须带errorMessage。
+
+### 8.4.3 向量删除
+
+| 项目 | 文档删除 | 知识库删除 |
+| --- | --- | --- |
+| 请求路径 | DELETE /internal/rag/documents/{documentId} | DELETE /internal/rag/knowledge-bases/{knowledgeBaseId} |
+| 查询参数 | userId、knowledgeBaseId | userId |
+| 说明 | 删除操作必须同时按userId、knowledgeBaseId、documentId过滤，并保持幂等。 | 删除操作必须同时按userId、knowledgeBaseId过滤，并保持幂等。 |
+
+## 8.5 生成测验题
+
+### 8.5.1 基本信息
 
 | 项目 | 内容 |
 | --- | --- |
@@ -2968,7 +3009,7 @@ form-data: file=@avatar.png&type=AVATAR
 | 请求方式 | POST |
 | 接口描述 | 调用LLM生成结构化测验题。 |
 
-### 8.4.2 请求参数
+### 8.5.2 请求参数
 
 参数格式：application/json
 
@@ -2997,7 +3038,7 @@ form-data: file=@avatar.png&type=AVATAR
 }
 ```
 
-### 8.4.3 响应数据
+### 8.5.3 响应数据
 
 参数格式：application/json
 

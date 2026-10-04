@@ -1971,10 +1971,9 @@ WebSocket替代SSE
 根据当前 API.md，架构实现前有四个点值得补充文档，但它们不阻塞当前
 ARCHITECTURE.md 成立。
 
-## 38.1 缺少 AI 异步任务完成回调
+## 38.1 AI 异步任务完成回调（已补充）
 
-API 定义文档、测验、学习计划可以异步 PROCESSING，但 FastAPI
-完成后如何通知 Spring Boot 尚未定义。
+本阶段已在 API.md 补充文档异步处理的进度回调契约。
 
 ARCHITECTURE.md 选择：
 
@@ -1982,16 +1981,13 @@ ARCHITECTURE.md 选择：
 FastAPI -> Spring Boot internal callback
 ```
 
-后续建议补入 API.md。
+API.md 已补充 `/internal/callbacks/documents/{documentId}/progress`，并规定 taskId 幂等与旧任务保护。
 
 ------------------------------------------------------------------------
 
-## 38.2 缺少删除 Vector 的内部接口
+## 38.2 Vector 删除内部接口（已补充）
 
-外部 API 要求删除文档/知识库同时删除向量，但内部 AI API 当前只有
-index/retrieve，没有 delete。
-
-后续建议补：
+本阶段已补充文档和知识库向量删除接口：
 
 ``` text
 DELETE /internal/rag/documents/{id}
@@ -2004,7 +2000,7 @@ DELETE /internal/rag/knowledge-bases/{id}
 
 Agent 需要读取学习进度/错题等业务数据，但 FastAPI 不应直接读 MySQL。
 
-后续应定义最小化：
+后续仍需定义最小化：
 
 ``` text
 FastAPI -> Spring Boot internal tool endpoints

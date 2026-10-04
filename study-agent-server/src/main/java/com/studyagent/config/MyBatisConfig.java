@@ -7,7 +7,8 @@ import org.springframework.context.annotation.Configuration;
 @MapperScan(basePackages = {
         "com.studyagent.auth.mapper",
         "com.studyagent.knowledge.mapper",
-        "com.studyagent.conversation.mapper"
+        "com.studyagent.conversation.mapper",
+        "com.studyagent.document.mapper"
 })
 public class MyBatisConfig {
 }
