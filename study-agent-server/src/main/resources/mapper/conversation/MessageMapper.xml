@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.studyagent.conversation.mapper.MessageMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_message (conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message)
+        VALUES (#{conversationId}, #{userId}, #{role}, #{content}, #{status}, #{traceId}, #{finishReason}, #{errorMessage})
+    </insert>
     <select id="findBefore" resultType="com.studyagent.conversation.entity.MessageEntity">
         SELECT id, conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message, create_time
         FROM sa_message
@@ -8,5 +12,32 @@
         <if test="beforeId != null">AND id &lt; #{beforeId}</if>
         ORDER BY id DESC
         LIMIT #{limit}
+    </select>
+    <update id="bindTrace">
+        UPDATE sa_message SET trace_id = #{traceId}
+        WHERE id = #{id} AND user_id = #{userId} AND status = 'GENERATING'
+    </update>
+    <update id="complete">
+        UPDATE sa_message
+        SET content = #{content}, status = 'COMPLETED', trace_id = #{traceId},
+            finish_reason = #{finishReason}, error_message = NULL
+        WHERE id = #{id} AND user_id = #{userId} AND status = 'GENERATING'
+    </update>
+    <update id="fail">
+        UPDATE sa_message
+        SET content = #{content}, status = 'FAILED', trace_id = COALESCE(#{traceId}, trace_id),
+            finish_reason = 'error', error_message = #{errorMessage}
+        WHERE id = #{id} AND user_id = #{userId} AND status = 'GENERATING'
+    </update>
+    <update id="cancelByTrace">
+        UPDATE sa_message SET status = 'CANCELLED', finish_reason = 'cancelled'
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId}
+          AND trace_id = #{traceId} AND status = 'GENERATING'
+    </update>
+    <select id="findByTraceAndOwner" resultType="com.studyagent.conversation.entity.MessageEntity">
+        SELECT id, conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message, create_time
+        FROM sa_message
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND trace_id = #{traceId}
+        LIMIT 1
     </select>
 </mapper>

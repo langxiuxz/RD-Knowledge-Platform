@@ -7,11 +7,14 @@ import com.studyagent.conversation.dto.ConversationQuery;
 import com.studyagent.conversation.dto.CreateConversationRequest;
 import com.studyagent.conversation.dto.UpdateConversationRequest;
 import com.studyagent.conversation.entity.ConversationEntity;
+import com.studyagent.conversation.entity.MessageCitationEntity;
 import com.studyagent.conversation.entity.MessageEntity;
 import com.studyagent.conversation.mapper.ConversationMapper;
+import com.studyagent.conversation.mapper.MessageCitationMapper;
 import com.studyagent.conversation.mapper.MessageMapper;
 import com.studyagent.conversation.vo.ConversationIdVO;
 import com.studyagent.conversation.vo.ConversationVO;
+import com.studyagent.conversation.vo.MessageCitationVO;
 import com.studyagent.conversation.vo.MessagePageVO;
 import com.studyagent.conversation.vo.MessageVO;
 import com.studyagent.knowledge.service.KnowledgeBaseService;
@@ -27,12 +30,15 @@ public class ConversationService {
     private static final Set<String> MODES = Set.of("CHAT", "RAG", "AGENT");
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
+    private final MessageCitationMapper citationMapper;
     private final KnowledgeBaseService knowledgeBaseService;
 
     public ConversationService(ConversationMapper conversationMapper, MessageMapper messageMapper,
+                               MessageCitationMapper citationMapper,
                                KnowledgeBaseService knowledgeBaseService) {
         this.conversationMapper = conversationMapper;
         this.messageMapper = messageMapper;
+        this.citationMapper = citationMapper;
         this.knowledgeBaseService = knowledgeBaseService;
     }
 
@@ -81,7 +87,10 @@ public class ConversationService {
         List<MessageEntity> visible = hasMore ? loaded.subList(0, pageSize) : loaded;
         List<MessageVO> rows = new ArrayList<>(visible.size());
         for (MessageEntity message : visible) {
-            rows.add(new MessageVO(message.getId(), message.getRole(), message.getContent(), List.of()));
+            List<MessageCitationVO> citations = "assistant".equals(message.getRole())
+                    ? citationMapper.findByMessageId(message.getId()).stream().map(this::toCitationVO).toList()
+                    : List.of();
+            rows.add(new MessageVO(message.getId(), message.getRole(), message.getContent(), citations));
         }
         return new MessagePageVO(rows, hasMore);
     }
@@ -95,5 +104,10 @@ public class ConversationService {
     private ConversationVO toVO(ConversationEntity entity) {
         return new ConversationVO(entity.getId(), entity.getTitle(), entity.getKnowledgeBaseId(), entity.getMode(),
                 entity.getMessageCount() == null ? 0L : entity.getMessageCount());
+    }
+
+    private MessageCitationVO toCitationVO(MessageCitationEntity entity) {
+        return new MessageCitationVO(entity.getDocumentId(), entity.getChunkId(), entity.getFileName(),
+                entity.getPage(), entity.getScore() == null ? null : entity.getScore().doubleValue());
     }
 }

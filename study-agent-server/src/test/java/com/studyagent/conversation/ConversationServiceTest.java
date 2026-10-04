@@ -4,6 +4,7 @@ import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.exception.ErrorCode;
 import com.studyagent.conversation.entity.ConversationEntity;
 import com.studyagent.conversation.mapper.ConversationMapper;
+import com.studyagent.conversation.mapper.MessageCitationMapper;
 import com.studyagent.conversation.mapper.MessageMapper;
 import com.studyagent.conversation.service.ConversationService;
 import com.studyagent.knowledge.service.KnowledgeBaseService;
@@ -20,11 +21,13 @@ import static org.mockito.Mockito.when;
 class ConversationServiceTest {
     @Mock ConversationMapper conversationMapper;
     @Mock MessageMapper messageMapper;
+    @Mock MessageCitationMapper citationMapper;
     @Mock KnowledgeBaseService knowledgeBaseService;
 
     @Test
     void get_whenOwnedByAnotherUser_shouldReject() {
-        ConversationService service = new ConversationService(conversationMapper, messageMapper, knowledgeBaseService);
+        ConversationService service = new ConversationService(
+                conversationMapper, messageMapper, citationMapper, knowledgeBaseService);
         when(conversationMapper.findByIdAndUserId(30L, 2L)).thenReturn(null);
 
         assertThatThrownBy(() -> service.get(2L, 30L))
@@ -35,7 +38,8 @@ class ConversationServiceTest {
 
     @Test
     void messages_shouldVerifyConversationOwnershipBeforeQueryingMessages() {
-        ConversationService service = new ConversationService(conversationMapper, messageMapper, knowledgeBaseService);
+        ConversationService service = new ConversationService(
+                conversationMapper, messageMapper, citationMapper, knowledgeBaseService);
         ConversationEntity owned = new ConversationEntity();
         owned.setId(30L);
         owned.setUserId(1L);

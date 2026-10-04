@@ -284,6 +284,8 @@ END
 
 实际节点可以随实现调整，但 CHAT/RAG/AGENT 三种模式的职责必须保持清晰。
 
+外部请求同时启用 `enableTools` 与 `useKnowledgeBase` 时仍归类为 AGENT，但允许在 Tool 调用前先执行 `retrieve_context`。该组合只使用会话已绑定且已完成用户归属校验的知识库，不引入第四种对外 mode。
+
 ------------------------------------------------------------------------
 
 # 5. 为什么采用 Java + Python 双后端
@@ -402,6 +404,15 @@ V1 推荐提供仅内网可访问的 Tool Bridge，例如：
 /internal/tools/wrong-questions
 /internal/tools/dashboard
 /internal/tools/study-plan-context
+```
+
+当前 V1 已在 API.md 固化四个最小只读端点：
+
+``` text
+POST /internal/tools/learning-progress
+POST /internal/tools/wrong-questions
+POST /internal/tools/weak-topics
+POST /internal/tools/recent-quiz-results
 ```
 
 注意：
@@ -1996,11 +2007,11 @@ DELETE /internal/rag/knowledge-bases/{id}
 
 ------------------------------------------------------------------------
 
-## 38.3 缺少 Agent Tool Bridge 契约
+## 38.3 Agent Tool Bridge 契约（已补充）
 
 Agent 需要读取学习进度/错题等业务数据，但 FastAPI 不应直接读 MySQL。
 
-后续仍需定义最小化：
+API.md 已补充最小化只读接口：
 
 ``` text
 FastAPI -> Spring Boot internal tool endpoints

@@ -17,4 +17,5 @@ public interface ConversationMapper {
     int updateTitleByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId,
                                  @Param("title") String title);
     int deleteByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
+    int touch(@Param("id") Long id, @Param("userId") Long userId);
 }

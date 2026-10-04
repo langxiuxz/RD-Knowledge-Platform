@@ -24,6 +24,22 @@ class SpringBootClient:
                    "chunkCount": chunk_count, "errorMessage": error_message}
         await self._request_json("POST", f"/internal/callbacks/documents/{document_id}/progress", payload)
 
+    async def get_learning_progress(self, user_id: int, limit: int) -> Any:
+        return await self._tool("learning-progress", user_id, limit)
+
+    async def get_wrong_questions(self, user_id: int, limit: int) -> Any:
+        return await self._tool("wrong-questions", user_id, limit)
+
+    async def get_weak_topics(self, user_id: int, limit: int) -> Any:
+        return await self._tool("weak-topics", user_id, limit)
+
+    async def get_recent_quiz_results(self, user_id: int, limit: int) -> Any:
+        return await self._tool("recent-quiz-results", user_id, limit)
+
+    async def _tool(self, path: str, user_id: int, limit: int) -> Any:
+        envelope = await self._request_json("POST", f"/internal/tools/{path}", {"userId": user_id, "limit": limit})
+        return envelope.get("data")
+
     async def _request_json(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         headers = {"X-Internal-Token": self._settings.internal_token}
         async with httpx.AsyncClient(base_url=self._settings.spring_boot_base_url, timeout=self._timeout()) as client:

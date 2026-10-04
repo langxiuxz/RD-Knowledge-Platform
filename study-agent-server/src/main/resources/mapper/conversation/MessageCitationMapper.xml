@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.conversation.mapper.MessageCitationMapper">
+    <insert id="insertBatch">
+        INSERT INTO sa_message_citation
+        (message_id, document_id, chunk_id, file_name, page, score, sort_order)
+        VALUES
+        <foreach collection="rows" item="row" separator=",">
+            (#{row.messageId}, #{row.documentId}, #{row.chunkId}, #{row.fileName}, #{row.page}, #{row.score}, #{row.sortOrder})
+        </foreach>
+    </insert>
+    <select id="findByMessageId" resultType="com.studyagent.conversation.entity.MessageCitationEntity">
+        SELECT id, message_id, document_id, chunk_id, file_name, page, score, sort_order
+        FROM sa_message_citation WHERE message_id = #{messageId}
+        ORDER BY sort_order ASC, id ASC
+    </select>
+</mapper>

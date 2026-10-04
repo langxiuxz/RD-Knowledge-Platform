@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,10 +15,27 @@ class AgentInvokeRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AgentCitation(BaseModel):
+    chunk_id: str = Field(alias="chunkId")
+    document_id: int = Field(alias="documentId")
+    file_name: str = Field(alias="fileName")
+    page: Optional[int] = None
+    score: Optional[float] = None
+
+    model_config = {"populate_by_name": True}
+
+
+class AgentToolCall(BaseModel):
+    name: str
+    status: Literal["success", "failed"]
+    result: Optional[Any] = None
+    error: Optional[str] = None
+
+
 class AgentInvokeResponse(BaseModel):
     answer: str
-    citations: List[Dict] = Field(default_factory=list)
-    tool_calls: List[Dict] = Field(default_factory=list, alias="toolCalls")
+    citations: List[AgentCitation] = Field(default_factory=list)
+    tool_calls: List[AgentToolCall] = Field(default_factory=list, alias="toolCalls")
     trace_id: str = Field(alias="traceId")
 
     model_config = {"populate_by_name": True}

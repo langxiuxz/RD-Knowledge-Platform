@@ -34,4 +34,7 @@
     <delete id="deleteByIdAndUserId">
         DELETE FROM sa_conversation WHERE id = #{id} AND user_id = #{userId}
     </delete>
+    <update id="touch">
+        UPDATE sa_conversation SET update_time = CURRENT_TIMESTAMP WHERE id = #{id} AND user_id = #{userId}
+    </update>
 </mapper>

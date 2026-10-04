@@ -1427,6 +1427,8 @@ data: {"messageId":9011,"finishReason":"stop"}
 
 Content-Type 必须为 text/event-stream；事件类型：start/node/tool/token/citation/done/error。服务端每个事件以空行分隔；SSE 接口不使用普通 Result<T> JSON 包装。
 
+模式选择规则：`enableTools=true` 时进入 AGENT；否则 `useKnowledgeBase=true` 时进入 RAG；否则使用会话自身的 `mode`。当 `enableTools=true` 且 `useKnowledgeBase=true` 时，AGENT 可先使用当前会话绑定知识库进行 RAG，再执行白名单 Tool，并同时返回 citation 与 tool 事件。显式使用知识库但会话未绑定知识库时返回参数错误。
+
 ## 3.9 停止生成
 
 ### 3.9.1 基本信息
@@ -3210,6 +3212,28 @@ data: {"traceId":"trace_93aa","finishReason":"stop"}
 
 仅允许内网服务调用；响应 Content-Type 为 text/event-stream。Spring Boot 负责鉴权、资源归属校验、消息持久化和向前端转发。
 
+## 8.7 Agent Tool Bridge
+
+以下只读接口供 FastAPI 白名单 Tool 调用，必须携带 `X-Internal-Token`。`userId` 只能由 Spring Boot 已认证的 Agent 请求传递，浏览器不得调用。
+
+| Tool | 请求路径 | 请求方式 |
+| --- | --- | --- |
+| get_learning_progress | /internal/tools/learning-progress | POST |
+| get_wrong_questions | /internal/tools/wrong-questions | POST |
+| get_weak_topics | /internal/tools/weak-topics | POST |
+| get_recent_quiz_results | /internal/tools/recent-quiz-results | POST |
+
+请求体统一为：
+
+```json
+{
+  "userId": 1,
+  "limit": 5
+}
+```
+
+`userId` 必须大于 0，`limit` 取值 1～20。响应使用统一 `Result<T>`；接口只返回当前 `userId` 的数据，不提供任意 SQL、任意 HTTP 或写操作能力。
+
 # 9. 错误码与安全约定
 
 | 业务码 | HTTP | 含义 |
@@ -3232,7 +3256,10 @@ data: {"traceId":"trace_93aa","finishReason":"stop"}
 | 4002 | 409 | 测验已提交 |
 | 1006 | 401 | refreshToken 无效或已过期 |
 | 2005 | 409 | 文档正在处理中，不能重复处理 |
+| 2006 | 404 | 文档不存在 |
+| 2007 | 404 | 会话不存在 |
 | 3005 | 409 | AI 生成任务已取消或已结束 |
+| 3006 | 500 | 向量删除失败 |
 | 4003 | 500 | 测验生成失败 |
 | 5001 | 500 | 学习计划生成失败 |
 

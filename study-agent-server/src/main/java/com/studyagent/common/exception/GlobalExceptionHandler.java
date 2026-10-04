@@ -38,6 +38,10 @@ public class GlobalExceptionHandler {
             case KNOWLEDGE_BASE_NOT_FOUND, DOCUMENT_NOT_FOUND, CONVERSATION_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case FILE_TOO_LARGE -> HttpStatus.PAYLOAD_TOO_LARGE;
             case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            case DOCUMENT_PROCESSING, GENERATION_CANCELLED -> HttpStatus.CONFLICT;
+            case AI_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
+            case AI_SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
+            case DOCUMENT_PARSE_FAILED, VECTOR_RETRIEVAL_FAILED, VECTOR_DELETE_FAILED, INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
             default -> HttpStatus.UNPROCESSABLE_ENTITY;
         };
         return ResponseEntity.status(status).body(Result.failure(exception.errorCode().code(), exception.getMessage()));

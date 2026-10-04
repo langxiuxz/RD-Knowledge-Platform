@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     llm_provider: str = "none"
     llm_api_key: str = ""
     llm_model: str = ""
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_timeout: float = Field(default=30.0, gt=0)
+    tool_timeout: float = Field(default=5.0, gt=0)
+    tool_max_calls: int = Field(default=4, ge=1, le=8)
+    rag_top_k: int = Field(default=5, ge=1, le=20)
     vector_store_provider: str = "none"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
