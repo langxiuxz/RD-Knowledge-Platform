@@ -1,0 +1,10 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    enabled: ${FLYWAY_ENABLED:false}
+
+logging:
+  level:
+    com.studyagent: DEBUG

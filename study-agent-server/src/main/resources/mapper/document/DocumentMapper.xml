@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.document.mapper.DocumentMapper">
+  <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+    INSERT INTO sa_document (knowledge_base_id,user_id,file_name,file_type,mime_type,file_size,storage_key,file_url,status,progress,chunk_count,current_task_id,error_message)
+    VALUES (#{knowledgeBaseId},#{userId},#{fileName},#{fileType},#{mimeType},#{fileSize},#{storageKey},#{fileUrl},#{status},#{progress},#{chunkCount},#{currentTaskId},#{errorMessage})
+  </insert>
+  <sql id="baseSelect">SELECT id,knowledge_base_id,user_id,file_name,file_type,mime_type,file_size,storage_key,file_url,status,progress,chunk_count,current_task_id,error_message,create_time,update_time,processed_at FROM sa_document</sql>
+  <select id="findByIdAndUserId" resultType="com.studyagent.document.entity.DocumentEntity">
+    <include refid="baseSelect"/> WHERE id=#{id} AND user_id=#{userId}
+  </select>
+  <select id="findById" resultType="com.studyagent.document.entity.DocumentEntity">
+    <include refid="baseSelect"/> WHERE id=#{id}
+  </select>
+  <select id="countByKnowledgeBaseAndUserId" resultType="long">
+    SELECT COUNT(*) FROM sa_document WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
+    <if test="fileName != null and fileName != ''">AND file_name LIKE CONCAT('%',#{fileName},'%')</if>
+    <if test="status != null and status != ''">AND status=#{status}</if>
+  </select>
+  <select id="findPageByKnowledgeBaseAndUserId" resultType="com.studyagent.document.entity.DocumentEntity">
+    <include refid="baseSelect"/> WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
+    <if test="fileName != null and fileName != ''">AND file_name LIKE CONCAT('%',#{fileName},'%')</if>
+    <if test="status != null and status != ''">AND status=#{status}</if>
+    ORDER BY update_time DESC,id DESC LIMIT #{offset},#{pageSize}
+  </select>
+  <update id="updateTaskStart">
+    UPDATE sa_document SET status=#{status},progress=#{progress},chunk_count=#{chunkCount},current_task_id=#{currentTaskId},error_message=NULL,processed_at=NULL
+    WHERE id=#{id} AND user_id=#{userId}
+  </update>
+  <update id="updateProgressIfCurrentTask">
+    UPDATE sa_document SET status=#{status}, progress=#{progress},
+      chunk_count=COALESCE(#{chunkCount},chunk_count), error_message=#{errorMessage},
+      processed_at=CASE WHEN #{ready}=true THEN CURRENT_TIMESTAMP ELSE processed_at END
+    WHERE id=#{id} AND current_task_id=#{taskId}
+  </update>
+  <select id="findStorageKeysByKnowledgeBaseAndUser" resultType="string">
+    SELECT storage_key FROM sa_document WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
+  </select>
+  <select id="existsByStorageKey" resultType="boolean">SELECT EXISTS(SELECT 1 FROM sa_document WHERE storage_key=#{storageKey})</select>
+  <delete id="deleteByIdAndUserId">DELETE FROM sa_document WHERE id=#{id} AND user_id=#{userId}</delete>
+</mapper>

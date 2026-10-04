@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.knowledge.mapper.KnowledgeBaseMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_knowledge_base (user_id, name, description, embedding_model)
+        VALUES (#{userId}, #{name}, #{description}, #{embeddingModel})
+    </insert>
+    <sql id="baseSelect">
+        SELECT k.id, k.user_id, k.name, k.description, k.embedding_model, k.status,
+               k.create_time, k.update_time,
+               (SELECT COUNT(*) FROM sa_document d WHERE d.knowledge_base_id = k.id) AS document_count,
+               COALESCE((SELECT SUM(d.chunk_count) FROM sa_document d WHERE d.knowledge_base_id = k.id), 0) AS chunk_count
+        FROM sa_knowledge_base k
+    </sql>
+    <select id="findByIdAndUserId" resultType="com.studyagent.knowledge.entity.KnowledgeBaseEntity">
+        <include refid="baseSelect"/>
+        WHERE k.id = #{id} AND k.user_id = #{userId}
+    </select>
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM sa_knowledge_base
+        WHERE user_id = #{userId}
+        <if test="name != null and name != ''">AND name LIKE CONCAT('%', #{name}, '%')</if>
+        <if test="status != null and status != ''">AND status = #{status}</if>
+    </select>
+    <select id="findPageByUserId" resultType="com.studyagent.knowledge.entity.KnowledgeBaseEntity">
+        <include refid="baseSelect"/>
+        WHERE k.user_id = #{userId}
+        <if test="name != null and name != ''">AND k.name LIKE CONCAT('%', #{name}, '%')</if>
+        <if test="status != null and status != ''">AND k.status = #{status}</if>
+        ORDER BY k.update_time DESC, k.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    <update id="updateByIdAndUserId">
+        UPDATE sa_knowledge_base SET name = #{name}, description = #{description}
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+    <delete id="deleteByIdAndUserId">
+        DELETE FROM sa_knowledge_base WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+</mapper>

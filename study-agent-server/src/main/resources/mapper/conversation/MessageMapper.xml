@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.conversation.mapper.MessageMapper">
+    <select id="findBefore" resultType="com.studyagent.conversation.entity.MessageEntity">
+        SELECT id, conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message, create_time
+        FROM sa_message
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId}
+        <if test="beforeId != null">AND id &lt; #{beforeId}</if>
+        ORDER BY id DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

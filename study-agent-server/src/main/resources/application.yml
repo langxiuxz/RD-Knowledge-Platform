@@ -1,0 +1,60 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: study-agent-server
+  profiles:
+    default: dev
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/study_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:study_agent}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      initialization-fail-timeout: -1
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:1000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT:1000}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+  flyway:
+    enabled: ${FLYWAY_ENABLED:false}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    out-of-order: false
+  servlet:
+    multipart:
+      max-file-size: ${MAX_FILE_SIZE:20MB}
+      max-request-size: ${MAX_REQUEST_SIZE:25MB}
+
+mybatis:
+  mapper-locations: classpath:/mapper/**/*.xml
+  type-aliases-package: com.studyagent
+  configuration:
+    map-underscore-to-camel-case: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:}
+    access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:2h}
+    refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:7d}
+  ai:
+    base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
+    connect-timeout: ${AI_CONNECT_TIMEOUT:2s}
+    read-timeout: ${AI_READ_TIMEOUT:30s}
+  internal:
+    token: ${INTERNAL_TOKEN:}
+  storage:
+    local-root: ${FILE_STORAGE_ROOT:./data/files}
+    public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8080/internal/files}
+
+logging:
+  level:
+    root: INFO
+    com.studyagent: INFO

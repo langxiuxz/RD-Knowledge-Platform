@@ -1,0 +1,11 @@
+.env
+**/.env
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/node_modules/
+**/dist/
+**/target/
+data/files/
+**/data/files/
+*.log

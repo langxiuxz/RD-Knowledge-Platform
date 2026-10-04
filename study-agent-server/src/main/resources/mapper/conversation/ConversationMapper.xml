@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.conversation.mapper.ConversationMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_conversation (user_id, knowledge_base_id, title, mode)
+        VALUES (#{userId}, #{knowledgeBaseId}, #{title}, #{mode})
+    </insert>
+    <select id="findByIdAndUserId" resultType="com.studyagent.conversation.entity.ConversationEntity">
+        SELECT c.id, c.user_id, c.knowledge_base_id, c.title, c.mode, c.create_time, c.update_time,
+               (SELECT COUNT(*) FROM sa_message m WHERE m.conversation_id = c.id AND m.user_id = c.user_id) AS message_count
+        FROM sa_conversation c
+        WHERE c.id = #{id} AND c.user_id = #{userId}
+    </select>
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM sa_conversation
+        WHERE user_id = #{userId}
+        <if test="keyword != null and keyword != ''">AND title LIKE CONCAT('%', #{keyword}, '%')</if>
+        <if test="mode != null and mode != ''">AND mode = #{mode}</if>
+    </select>
+    <select id="findPageByUserId" resultType="com.studyagent.conversation.entity.ConversationEntity">
+        SELECT c.id, c.user_id, c.knowledge_base_id, c.title, c.mode, c.create_time, c.update_time,
+               (SELECT COUNT(*) FROM sa_message m WHERE m.conversation_id = c.id AND m.user_id = c.user_id) AS message_count
+        FROM sa_conversation c
+        WHERE c.user_id = #{userId}
+        <if test="keyword != null and keyword != ''">AND c.title LIKE CONCAT('%', #{keyword}, '%')</if>
+        <if test="mode != null and mode != ''">AND c.mode = #{mode}</if>
+        ORDER BY c.update_time DESC, c.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    <update id="updateTitleByIdAndUserId">
+        UPDATE sa_conversation SET title = #{title}
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+    <delete id="deleteByIdAndUserId">
+        DELETE FROM sa_conversation WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+</mapper>

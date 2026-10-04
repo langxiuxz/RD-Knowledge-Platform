@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.auth.mapper.RefreshTokenMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_refresh_token (user_id, session_id, token_hash, expires_at)
+        VALUES (#{userId}, #{sessionId}, #{tokenHash}, #{expiresAt})
+    </insert>
+    <select id="findByTokenHash" resultType="com.studyagent.auth.entity.RefreshTokenEntity">
+        SELECT id, user_id, session_id, token_hash, expires_at, revoked_at, create_time, last_used_at
+        FROM sa_refresh_token WHERE token_hash = #{tokenHash}
+    </select>
+    <update id="revokeByUserAndSession">
+        UPDATE sa_refresh_token SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+        WHERE user_id = #{userId} AND session_id = #{sessionId}
+    </update>
+    <update id="revokeAllByUserId">
+        UPDATE sa_refresh_token SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+        WHERE user_id = #{userId} AND revoked_at IS NULL
+    </update>
+    <update id="markUsed">
+        UPDATE sa_refresh_token SET last_used_at = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND revoked_at IS NULL
+    </update>
+</mapper>
