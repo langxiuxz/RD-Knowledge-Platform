@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.learning.mapper.TopicProgressMapper">
+    <insert id="addStudyMinutes">
+        INSERT INTO sa_topic_progress (user_id, topic, study_minutes)
+        VALUES (#{userId}, #{topic}, #{minutes})
+        ON DUPLICATE KEY UPDATE study_minutes = study_minutes + VALUES(study_minutes)
+    </insert>
+
+    <insert id="recordQuizAnswer">
+        INSERT INTO sa_topic_progress
+        (user_id, topic, mastery, quiz_accuracy, wrong_count, quiz_question_count, correct_question_count)
+        VALUES
+        (#{userId}, #{topic}, #{correct} * 100, #{correct} * 100, #{wrong}, 1, #{correct})
+        ON DUPLICATE KEY UPDATE
+            wrong_count = wrong_count + VALUES(wrong_count),
+            quiz_question_count = quiz_question_count + 1,
+            correct_question_count = correct_question_count + VALUES(correct_question_count),
+            quiz_accuracy = ROUND(correct_question_count * 100.0 / quiz_question_count, 2),
+            mastery = ROUND(correct_question_count * 100.0 / quiz_question_count, 2)
+    </insert>
+
+    <select id="findByUserId" resultType="com.studyagent.learning.entity.TopicProgressEntity">
+        SELECT id, user_id, topic, mastery, quiz_accuracy, study_minutes, wrong_count,
+               quiz_question_count, correct_question_count
+        FROM sa_topic_progress
+        WHERE user_id = #{userId}
+        ORDER BY mastery DESC, topic ASC
+    </select>
+
+    <select id="findWeakByUserId" resultType="com.studyagent.learning.entity.TopicProgressEntity">
+        SELECT id, user_id, topic, mastery, quiz_accuracy, study_minutes, wrong_count,
+               quiz_question_count, correct_question_count
+        FROM sa_topic_progress
+        WHERE user_id = #{userId}
+        ORDER BY mastery ASC, wrong_count DESC, topic ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

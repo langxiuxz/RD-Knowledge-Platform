@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.learning.mapper.LearningRecordMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_learning_record (user_id, type, topic, duration_minutes, source_id, remark)
+        VALUES (#{userId}, #{type}, #{topic}, #{durationMinutes}, #{sourceId}, #{remark})
+    </insert>
+
+    <sql id="filters">
+        user_id = #{userId}
+        <if test="begin != null">AND create_time &gt;= #{begin}</if>
+        <if test="end != null">AND create_time &lt; #{end}</if>
+        <if test="type != null and type != ''">AND type = #{type}</if>
+        <if test="topic != null and topic != ''">AND topic LIKE CONCAT('%', #{topic}, '%')</if>
+    </sql>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM sa_learning_record WHERE <include refid="filters"/>
+    </select>
+
+    <select id="findPageByUserId" resultType="com.studyagent.learning.entity.LearningRecordEntity">
+        SELECT id, user_id, type, topic, duration_minutes, source_id, remark, create_time
+        FROM sa_learning_record
+        WHERE <include refid="filters"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+</mapper>

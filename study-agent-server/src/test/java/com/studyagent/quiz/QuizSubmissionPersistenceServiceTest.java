@@ -1,0 +1,53 @@
+package com.studyagent.quiz;
+
+import com.studyagent.learning.mapper.LearningRecordMapper;
+import com.studyagent.learning.mapper.TopicProgressMapper;
+import com.studyagent.quiz.entity.QuizEntity;
+import com.studyagent.quiz.entity.QuizQuestionEntity;
+import com.studyagent.quiz.mapper.QuizAnswerMapper;
+import com.studyagent.quiz.mapper.QuizMapper;
+import com.studyagent.quiz.service.QuizSubmissionPersistenceService;
+import com.studyagent.wrong.mapper.WrongQuestionMapper;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class QuizSubmissionPersistenceServiceTest {
+    @Mock QuizMapper quizMapper;
+    @Mock QuizAnswerMapper answerMapper;
+    @Mock WrongQuestionMapper wrongQuestionMapper;
+    @Mock TopicProgressMapper progressMapper;
+    @Mock LearningRecordMapper learningRecordMapper;
+
+    @Test
+    void commit_whenAnswerIsWrong_shouldUpsertWrongQuestionAndProgress() {
+        QuizSubmissionPersistenceService service = new QuizSubmissionPersistenceService(
+                quizMapper, answerMapper, wrongQuestionMapper, progressMapper, learningRecordMapper);
+        QuizEntity quiz = new QuizEntity();
+        quiz.setId(50L);
+        quiz.setStatus("READY");
+        quiz.setTitle("Quiz");
+        quiz.setTopic("Spring AOP");
+        QuizQuestionEntity question = new QuizQuestionEntity();
+        question.setId(11L);
+        question.setTopic("Spring AOP");
+        when(quizMapper.findByIdAndUserId(50L, 1L)).thenReturn(quiz);
+        when(quizMapper.markCompleted(any(), any(), any(), any(Integer.class), any(Integer.class), any())).thenReturn(1);
+
+        service.commit(1L, 50L, List.of(
+                new QuizSubmissionPersistenceService.GradedAnswer(question, "\"B\"", false)));
+
+        verify(wrongQuestionMapper).upsertWrong(1L, 11L, "Spring AOP");
+        verify(progressMapper).recordQuizAnswer(1L, "Spring AOP", 0, 1);
+        verify(answerMapper).insert(any());
+        verify(learningRecordMapper).insert(any());
+    }
+}

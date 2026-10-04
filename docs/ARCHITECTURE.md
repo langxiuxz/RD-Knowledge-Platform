@@ -1017,17 +1017,13 @@ Spring Boot
 
 关于 `SHORT` 简答题：
 
-API.md 定义了 SHORT，但没有明确"简答题如何评分"。
-
-因此 V1 不应让 Codex自行决定"LLM评分规则"。正式实现 SHORT
-自动评分前，应在 API/需求中补充评分策略。
-
-可以先：
-
 ``` text
-SINGLE / MULTIPLE / JUDGE -> 确定性评分
-SHORT -> 待业务规则确认
+Spring Boot -> POST /internal/quiz/grade-short -> FastAPI
+FastAPI -> Structured Output(score, correct, feedback)
+默认 score >= 0.6 -> correct
 ```
+
+Spring Boot 必须先完成所有 SHORT 外部评分，再开启本地提交事务；任一评分失败时不保存部分答案，quiz 保持 READY。
 
 ------------------------------------------------------------------------
 
@@ -2019,7 +2015,7 @@ FastAPI -> Spring Boot internal tool endpoints
 
 ------------------------------------------------------------------------
 
-## 38.4 SHORT 简答题评分规则未定义
+## 38.4 SHORT 简答题评分规则（已补充）
 
 API 支持：
 
@@ -2027,9 +2023,7 @@ API 支持：
 SINGLE / MULTIPLE / JUDGE / SHORT
 ```
 
-但没有规定 SHORT 如何自动评分。
-
-架构不擅自决定。实现前应补充需求/API 规则。
+API.md 已补充 `/internal/quiz/grade-short`，结构化返回 `score/correct/feedback`，默认阈值为 `score >= 0.6`。
 
 ------------------------------------------------------------------------
 

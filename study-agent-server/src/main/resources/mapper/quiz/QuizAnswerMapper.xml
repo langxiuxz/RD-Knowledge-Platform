@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.quiz.mapper.QuizAnswerMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_quiz_answer (quiz_id, question_id, user_id, user_answer_json, is_correct)
+        VALUES (#{quizId}, #{questionId}, #{userId}, #{userAnswerJson}, #{isCorrect})
+    </insert>
+
+    <select id="findByQuizIdAndUserId" resultType="com.studyagent.quiz.entity.QuizAnswerEntity">
+        SELECT id, quiz_id, question_id, user_id, user_answer_json, is_correct
+        FROM sa_quiz_answer
+        WHERE quiz_id = #{quizId} AND user_id = #{userId}
+        ORDER BY id ASC
+    </select>
+</mapper>

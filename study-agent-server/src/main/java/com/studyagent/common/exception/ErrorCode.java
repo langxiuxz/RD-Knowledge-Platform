@@ -20,7 +20,11 @@ public enum ErrorCode {
     STRUCTURED_OUTPUT_INVALID(3003, "模型结构化输出校验失败"),
     VECTOR_RETRIEVAL_FAILED(3004, "向量检索失败"),
     GENERATION_CANCELLED(3005, "AI生成任务已取消或已结束"),
-    VECTOR_DELETE_FAILED(3006, "向量删除失败");
+    VECTOR_DELETE_FAILED(3006, "向量删除失败"),
+    QUIZ_NOT_FOUND(4001, "测验不存在"),
+    QUIZ_ALREADY_SUBMITTED(4002, "测验已提交"),
+    QUIZ_GENERATION_FAILED(4003, "测验生成失败"),
+    STUDY_PLAN_GENERATION_FAILED(5001, "学习计划生成失败");
 
     private final int code;
     private final String message;

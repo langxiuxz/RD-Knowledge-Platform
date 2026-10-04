@@ -1692,6 +1692,8 @@ AI 生成可能耗时，创建任务后返回 PROCESSING；完成后变为 READY
 | msg | string | 否 | 提示信息 |
 | data | object / array / null | 否 | 业务数据 |
 | data.id | number | 否 | 响应业务字段 |
+| data.status | string | 否 | PROCESSING/READY/FAILED/COMPLETED |
+| data.errorMessage | string | 否 | 生成失败原因 |
 | data.questions | array | 否 | 响应业务字段 |
 | data.questions[].id | number | 否 | 响应业务字段 |
 | data.questions[].type | string | 否 | 响应业务字段 |
@@ -1708,6 +1710,8 @@ AI 生成可能耗时，创建任务后返回 PROCESSING；完成后变为 READY
   "msg": "success",
   "data": {
     "id": 501,
+    "status": "READY",
+    "errorMessage": null,
     "questions": [
       {
         "id": 7001,
@@ -2359,6 +2363,9 @@ AI 计划生成按异步任务处理：PROCESSING → READY/FAILED。计划 READ
 | msg | string | 否 | 提示信息 |
 | data | object / array / null | 否 | 业务数据 |
 | data.id | number | 否 | 响应业务字段 |
+| data.generationStatus | string | 否 | PROCESSING/READY/FAILED |
+| data.status | string | 否 | ACTIVE/COMPLETED/ARCHIVED |
+| data.errorMessage | string | 否 | AI生成失败原因 |
 | data.tasks | array | 否 | 响应业务字段 |
 | data.tasks[].id | number | 否 | 响应业务字段 |
 | data.tasks[].date | string | 否 | 响应业务字段 |
@@ -2375,6 +2382,9 @@ AI 计划生成按异步任务处理：PROCESSING → READY/FAILED。计划 READ
   "msg": "success",
   "data": {
     "id": 1201,
+    "generationStatus": "READY",
+    "status": "ACTIVE",
+    "errorMessage": null,
     "tasks": [
       {
         "id": 1,
@@ -3051,7 +3061,9 @@ Spring Boot只接受 `taskId == sa_document.current_task_id` 的回调；旧任�
 | data | object / array / null | 否 | 业务数据 |
 | data.questions | array | 否 | 响应业务字段 |
 | data.questions[].type | string | 否 | 响应业务字段 |
+| data.questions[].topic | string | 否 | 细分知识点；为空时继承测验主题 |
 | data.questions[].content | string | 否 | 响应业务字段 |
+| data.questions[].options | array | 否 | SINGLE/MULTIPLE/JUDGE 的选项；SHORT 可为空 |
 | data.questions[].answer | string | 否 | 响应业务字段 |
 | data.questions[].explanation | string | 否 | 响应业务字段 |
 
@@ -3065,7 +3077,12 @@ Spring Boot只接受 `taskId == sa_document.current_task_id` 的回调；旧任�
     "questions": [
       {
         "type": "SINGLE",
+        "topic": "Spring IOC",
         "content": "IOC核心含义？",
+        "options": [
+          {"key": "A", "text": "对象由容器管理"},
+          {"key": "B", "text": "数据库连接"}
+        ],
         "answer": "A",
         "explanation": "对象管理权交给容器。"
       }
@@ -3074,9 +3091,37 @@ Spring Boot只接受 `taskId == sa_document.current_task_id` 的回调；旧任�
 }
 ```
 
-## 8.5 生成学习计划
+## 8.6 SHORT 简答题评分
 
-### 8.5.1 基本信息
+### 8.6.1 基本信息
+
+| 项目 | 内容 |
+| --- | --- |
+| 请求路径 | /internal/quiz/grade-short |
+| 请求方式 | POST |
+| 接口描述 | 使用 LLM 对单道 SHORT 简答题进行结构化评分。 |
+
+### 8.6.2 请求参数
+
+| 参数名 | 类型 | 是否必须 | 备注 |
+| --- | --- | --- | --- |
+| question | string | 是 | 题干 |
+| referenceAnswer | string | 是 | 标准答案 |
+| userAnswer | string | 是 | 用户答案 |
+
+### 8.6.3 响应数据
+
+| 参数名 | 类型 | 是否必须 | 备注 |
+| --- | --- | --- | --- |
+| data.score | number | 是 | 0～1 |
+| data.correct | boolean | 是 | 默认按 score >= 0.6 判定 |
+| data.feedback | string | 是 | 简短反馈 |
+
+SHORT 评分必须先全部成功，Spring Boot 才能在一个数据库事务中保存本次测验结果；任一评分失败不得保存部分答案，测验保持 READY 以便重试。
+
+## 8.7 生成学习计划
+
+### 8.7.1 基本信息
 
 | 项目 | 内容 |
 | --- | --- |
@@ -3084,7 +3129,7 @@ Spring Boot只接受 `taskId == sa_document.current_task_id` 的回调；旧任�
 | 请求方式 | POST |
 | 接口描述 | 基于学习画像生成结构化计划。 |
 
-### 8.5.2 请求参数
+### 8.7.2 请求参数
 
 参数格式：application/json
 
@@ -3115,7 +3160,7 @@ Spring Boot只接受 `taskId == sa_document.current_task_id` 的回调；旧任�
 }
 ```
 
-### 8.5.3 响应数据
+### 8.7.3 响应数据
 
 参数格式：application/json
 
@@ -3149,7 +3194,7 @@ Spring Boot只接受 `taskId == sa_document.current_task_id` 的回调；旧任�
 }
 ```
 
-## 8.6 Agent流式执行
+## 8.8 Agent流式执行
 
 ### 8.6.1 基本信息
 

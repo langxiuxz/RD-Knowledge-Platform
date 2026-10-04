@@ -11,7 +11,8 @@ class AIServiceError(Exception):
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AIServiceError)
     async def handle_ai_error(_: Request, exc: AIServiceError) -> JSONResponse:
-        return JSONResponse(status_code=503, content={"code": exc.code, "msg": str(exc), "data": None})
+        status = 422 if exc.code == "STRUCTURED_OUTPUT_INVALID" else 503
+        return JSONResponse(status_code=status, content={"code": exc.code, "msg": str(exc), "data": None})
 
     @app.exception_handler(Exception)
     async def handle_unexpected(_: Request, __: Exception) -> JSONResponse:

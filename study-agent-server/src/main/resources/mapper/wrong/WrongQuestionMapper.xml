@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.wrong.mapper.WrongQuestionMapper">
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM sa_wrong_question
+        WHERE user_id = #{userId}
+        <if test="topic != null and topic != ''">AND topic LIKE CONCAT('%', #{topic}, '%')</if>
+        <if test="mastered != null">AND mastered = #{mastered}</if>
+    </select>
+
+    <select id="findPageByUserId" resultType="com.studyagent.wrong.entity.WrongQuestionEntity">
+        SELECT id, user_id, question_id, topic, wrong_count, mastered, first_wrong_at, last_wrong_at
+        FROM sa_wrong_question
+        WHERE user_id = #{userId}
+        <if test="topic != null and topic != ''">AND topic LIKE CONCAT('%', #{topic}, '%')</if>
+        <if test="mastered != null">AND mastered = #{mastered}</if>
+        ORDER BY last_wrong_at DESC, id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <insert id="upsertWrong">
+        INSERT INTO sa_wrong_question (user_id, question_id, topic, wrong_count, mastered)
+        VALUES (#{userId}, #{questionId}, #{topic}, 1, 0)
+        ON DUPLICATE KEY UPDATE
+            topic = VALUES(topic), wrong_count = wrong_count + 1, mastered = 0,
+            last_wrong_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <update id="updateMastered">
+        UPDATE sa_wrong_question SET mastered = #{mastered}
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteByIdAndUserId">
+        DELETE FROM sa_wrong_question WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+</mapper>

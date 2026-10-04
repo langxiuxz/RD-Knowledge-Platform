@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.quiz.mapper.QuizMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_quiz
+        (user_id, knowledge_base_id, title, topic, difficulty, question_count, types_json, status)
+        VALUES
+        (#{userId}, #{knowledgeBaseId}, #{title}, #{topic}, #{difficulty}, #{questionCount}, #{typesJson}, #{status})
+    </insert>
+
+    <select id="findByIdAndUserId" resultType="com.studyagent.quiz.entity.QuizEntity">
+        SELECT id, user_id, knowledge_base_id, title, topic, difficulty, question_count, types_json,
+               status, score, correct_count, wrong_count, analysis, error_message,
+               create_time, update_time, submitted_at
+        FROM sa_quiz
+        WHERE id = #{id} AND user_id = #{userId}
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM sa_quiz
+        WHERE user_id = #{userId}
+        <if test="keyword != null and keyword != ''">AND title LIKE CONCAT('%', #{keyword}, '%')</if>
+        <if test="status != null and status != ''">AND status = #{status}</if>
+    </select>
+
+    <select id="findPageByUserId" resultType="com.studyagent.quiz.entity.QuizEntity">
+        SELECT id, user_id, knowledge_base_id, title, topic, difficulty, question_count, types_json,
+               status, score, correct_count, wrong_count, analysis, error_message,
+               create_time, update_time, submitted_at
+        FROM sa_quiz
+        WHERE user_id = #{userId}
+        <if test="keyword != null and keyword != ''">AND title LIKE CONCAT('%', #{keyword}, '%')</if>
+        <if test="status != null and status != ''">AND status = #{status}</if>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <update id="markReady">
+        UPDATE sa_quiz SET status = 'READY', error_message = NULL
+        WHERE id = #{id} AND user_id = #{userId} AND status = 'PROCESSING'
+    </update>
+
+    <update id="markFailed">
+        UPDATE sa_quiz SET status = 'FAILED', error_message = #{errorMessage}
+        WHERE id = #{id} AND user_id = #{userId} AND status = 'PROCESSING'
+    </update>
+
+    <update id="markCompleted">
+        UPDATE sa_quiz
+        SET status = 'COMPLETED', score = #{score}, correct_count = #{correctCount},
+            wrong_count = #{wrongCount}, analysis = #{analysis}, submitted_at = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND user_id = #{userId} AND status = 'READY'
+    </update>
+</mapper>

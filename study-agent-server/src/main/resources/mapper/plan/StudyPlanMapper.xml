@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.plan.mapper.StudyPlanMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_study_plan
+        (user_id, title, goal, start_date, end_date, daily_minutes, focus_topics_json,
+         generation_status, status)
+        VALUES
+        (#{userId}, #{title}, #{goal}, #{startDate}, #{endDate}, #{dailyMinutes}, #{focusTopicsJson},
+         #{generationStatus}, #{status})
+    </insert>
+
+    <sql id="baseSelect">
+        SELECT p.id, p.user_id, p.title, p.goal, p.start_date, p.end_date, p.daily_minutes,
+               p.focus_topics_json, p.generation_status, p.status, p.error_message,
+               p.create_time, p.update_time,
+               (SELECT COUNT(*) FROM sa_study_plan_task t WHERE t.plan_id = p.id AND t.user_id = p.user_id) AS task_count,
+               (SELECT COUNT(*) FROM sa_study_plan_task t WHERE t.plan_id = p.id AND t.user_id = p.user_id
+                   AND t.completed = 1) AS completed_task_count
+        FROM sa_study_plan p
+    </sql>
+
+    <select id="findByIdAndUserId" resultType="com.studyagent.plan.entity.StudyPlanEntity">
+        <include refid="baseSelect"/>
+        WHERE p.id = #{id} AND p.user_id = #{userId}
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM sa_study_plan
+        WHERE user_id = #{userId}
+        <if test="status != null and status != ''">AND status = #{status}</if>
+    </select>
+
+    <select id="findPageByUserId" resultType="com.studyagent.plan.entity.StudyPlanEntity">
+        <include refid="baseSelect"/>
+        WHERE p.user_id = #{userId}
+        <if test="status != null and status != ''">AND p.status = #{status}</if>
+        ORDER BY p.create_time DESC, p.id DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <update id="markReady">
+        UPDATE sa_study_plan
+        SET title = #{title}, generation_status = 'READY', error_message = NULL
+        WHERE id = #{id} AND user_id = #{userId} AND generation_status = 'PROCESSING'
+    </update>
+
+    <update id="markFailed">
+        UPDATE sa_study_plan
+        SET generation_status = 'FAILED', error_message = #{errorMessage}
+        WHERE id = #{id} AND user_id = #{userId} AND generation_status = 'PROCESSING'
+    </update>
+
+    <update id="updateStatus">
+        UPDATE sa_study_plan SET status = #{status}
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteByIdAndUserId">
+        DELETE FROM sa_study_plan WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+</mapper>

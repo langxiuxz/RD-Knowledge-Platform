@@ -109,6 +109,39 @@ public class RestClientAiClient implements AiClient {
                 });
     }
 
+    @Override
+    public QuizGenerateResponse generateQuiz(QuizGenerateRequest request) {
+        QuizEnvelope envelope = restClient.post().uri("/internal/quiz/generate")
+                .contentType(MediaType.APPLICATION_JSON).body(request)
+                .retrieve().body(QuizEnvelope.class);
+        if (envelope == null || envelope.data() == null || envelope.data().questions() == null) {
+            throw new IllegalStateException("AI quiz service returned an empty response");
+        }
+        return new QuizGenerateResponse(Arrays.asList(envelope.data().questions()));
+    }
+
+    @Override
+    public ShortGradeResponse gradeShort(ShortGradeRequest request) {
+        ShortGradeEnvelope envelope = restClient.post().uri("/internal/quiz/grade-short")
+                .contentType(MediaType.APPLICATION_JSON).body(request)
+                .retrieve().body(ShortGradeEnvelope.class);
+        if (envelope == null || envelope.data() == null) {
+            throw new IllegalStateException("AI short grading service returned an empty response");
+        }
+        return envelope.data();
+    }
+
+    @Override
+    public PlanGenerateResponse generatePlan(PlanGenerateRequest request) {
+        PlanEnvelope envelope = restClient.post().uri("/internal/plans/generate")
+                .contentType(MediaType.APPLICATION_JSON).body(request)
+                .retrieve().body(PlanEnvelope.class);
+        if (envelope == null || envelope.data() == null || envelope.data().tasks() == null) {
+            throw new IllegalStateException("AI plan service returned an empty response");
+        }
+        return new PlanGenerateResponse(envelope.data().title(), Arrays.asList(envelope.data().tasks()));
+    }
+
     private void accept(StreamEventConsumer consumer, StreamEvent event) {
         try {
             consumer.accept(event);
@@ -127,4 +160,9 @@ public class RestClientAiClient implements AiClient {
                                  String content, Double score) {}
     private record AgentEnvelope(int code, String msg, AgentData data) {}
     private record AgentData(String answer, Citation[] citations, ToolCall[] toolCalls, String traceId) {}
+    private record QuizEnvelope(int code, String msg, QuizData data) {}
+    private record QuizData(GeneratedQuestion[] questions) {}
+    private record ShortGradeEnvelope(int code, String msg, ShortGradeResponse data) {}
+    private record PlanEnvelope(int code, String msg, PlanData data) {}
+    private record PlanData(String title, GeneratedPlanTask[] tasks) {}
 }

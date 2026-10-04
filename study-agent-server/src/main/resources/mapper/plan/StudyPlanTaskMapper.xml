@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.plan.mapper.StudyPlanTaskMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO sa_study_plan_task
+        (plan_id, user_id, task_date, topic, type, estimated_minutes, completed, sort_order)
+        VALUES
+        (#{planId}, #{userId}, #{taskDate}, #{topic}, #{type}, #{estimatedMinutes}, #{completed}, #{sortOrder})
+    </insert>
+
+    <select id="findByPlanIdAndUserId" resultType="com.studyagent.plan.entity.StudyPlanTaskEntity">
+        SELECT id, plan_id, user_id, task_date, topic, type, estimated_minutes,
+               completed, completed_at, sort_order
+        FROM sa_study_plan_task
+        WHERE plan_id = #{planId} AND user_id = #{userId}
+        ORDER BY task_date ASC, sort_order ASC, id ASC
+    </select>
+
+    <update id="updateCompleted">
+        UPDATE sa_study_plan_task
+        SET completed = #{completed},
+            completed_at = CASE WHEN #{completed} = 1 THEN CURRENT_TIMESTAMP ELSE NULL END
+        WHERE id = #{taskId} AND plan_id = #{planId} AND user_id = #{userId}
+    </update>
+
+    <select id="countIncomplete" resultType="int">
+        SELECT COUNT(*) FROM sa_study_plan_task
+        WHERE plan_id = #{planId} AND user_id = #{userId} AND completed = 0
+    </select>
+</mapper>
