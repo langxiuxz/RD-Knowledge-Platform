@@ -28,5 +28,8 @@ class GenerateAnswerNode:
         tool_calls = state.get("tool_calls", [])
         if tool_calls:
             prompt.append("TOOL_RESULTS:\n" + json.dumps(tool_calls, ensure_ascii=False, default=str))
-        answer = await self._llm.generate("\n".join(prompt))
-        return {"answer": answer, "citations": citations}
+        if state.get("answer"):
+            answer = state["answer"]
+        else:
+            answer = await self._llm.generate("\n".join(prompt))
+        return {"answer": answer, "citations": citations or state.get("citations", [])}

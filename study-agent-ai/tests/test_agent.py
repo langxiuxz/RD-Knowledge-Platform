@@ -68,49 +68,123 @@ def test_rag_invoke_returns_only_owned_citation(monkeypatch):
     assert "foreign context" not in response.json()["data"]["answer"]
 
 
-def test_agent_invokes_whitelisted_tool(monkeypatch):
-    class FakeRegistry:
-        async def execute(self, name, user_id, arguments):
-            assert user_id == 1
-            assert name == "get_wrong_questions"
-            return [{"questionId": 9}]
+def _tool_call(call_id, name, arguments):
+    import json
+    return {"id": call_id, "type": "function", "function": {
+        "name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}}
 
-    monkeypatch.setattr("app.graph.builder.create_default_registry", lambda settings: FakeRegistry())
+
+class FakeRegistry:
+    def __init__(self, handler):
+        self.handler = handler
+
+    def schemas(self, include_knowledge_search=False):
+        return []
+
+    async def execute(self, name, user_id, arguments):
+        return await self.handler(name, user_id, arguments)
+
+
+class SequenceLLM:
+    def __init__(self, *responses):
+        self.responses = list(responses)
+
+    async def generate(self, prompt):
+        return "generated"
+
+    async def chat(self, messages, tools):
+        return self.responses.pop(0)
+
+
+def test_agent_autonomously_calls_multiple_tools_then_answers(monkeypatch):
+    async def execute(name, user_id, arguments):
+        assert user_id == 1
+        if name == "get_topic_progress":
+            return [{"topic": "Spring", "mastery": 0.4}]
+        assert name == "get_wrong_questions"
+        return [{"topic": "Spring", "content": "AOP proxy boundaries"}]
+
+    monkeypatch.setattr("app.graph.builder.create_default_registry", lambda settings: FakeRegistry(execute))
+    llm = SequenceLLM(
+        {"content": None, "tool_calls": [_tool_call("1", "get_topic_progress", {"topic": "Spring"})]},
+        {"content": None, "tool_calls": [_tool_call("2", "get_wrong_questions", {"topic": "Spring", "limit": 5})]},
+        {"content": "Spring mastery is low; mistakes focus on AOP proxy boundaries.", "tool_calls": []},
+    )
+    monkeypatch.setattr("app.graph.builder.LLMFactory.create", lambda self: llm)
     response = TestClient(app).post(
         "/internal/agent/invoke", headers=_headers(monkeypatch),
-        json=_request("AGENT", content="分析我的错题")
+        json=_request("AGENT", content="My Spring weak points")
     )
-
     assert response.status_code == 200
-    calls = response.json()["data"]["toolCalls"]
-    assert calls == [{"name": "get_wrong_questions", "status": "success",
-                      "result": [{"questionId": 9}], "error": None}]
+    data = response.json()["data"]
+    assert [call["name"] for call in data["toolCalls"]] == ["get_topic_progress", "get_wrong_questions"]
+    assert "AOP proxy boundaries" in data["answer"]
 
 
-def test_agent_with_knowledge_base_retrieves_and_invokes_tool(monkeypatch):
-    class FakeRegistry:
-        async def execute(self, name, user_id, arguments):
-            return [{"topic": "dependency injection", "mastery": 0.4}]
+def test_general_question_does_not_force_tool_use(monkeypatch):
+    async def execute(name, user_id, arguments):
+        raise AssertionError("No tool should be called for a general knowledge question")
+
+    monkeypatch.setattr("app.graph.builder.create_default_registry", lambda settings: FakeRegistry(execute))
+    monkeypatch.setattr("app.graph.builder.LLMFactory.create", lambda self: SequenceLLM(
+        {"content": "Polymorphism lets implementations share a common interface.", "tool_calls": []}
+    ))
+    response = TestClient(app).post(
+        "/internal/agent/invoke", headers=_headers(monkeypatch),
+        json=_request("AGENT", content="What is Java polymorphism?")
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["toolCalls"] == []
+
+
+def test_agent_tool_loop_stops_at_configured_step_limit(monkeypatch):
+    from app.core.config import Settings
+
+    async def execute(name, user_id, arguments):
+        return [{"topic": "Spring"}]
+
+    monkeypatch.setattr("app.graph.builder.create_default_registry", lambda settings: FakeRegistry(execute))
+    llm = SequenceLLM(
+        {"content": None, "tool_calls": [_tool_call("1", "get_learning_progress", {"limit": 5})]},
+        {"content": None, "tool_calls": [_tool_call("2", "get_learning_progress", {"limit": 5})]},
+    )
+    monkeypatch.setattr("app.graph.builder.LLMFactory.create", lambda self: llm)
+    monkeypatch.setattr("app.api.agent.get_settings", lambda: Settings(max_agent_steps=2))
+    response = TestClient(app).post(
+        "/internal/agent/invoke", headers=_headers(monkeypatch),
+        json=_request("AGENT", content="Review my learning progress")
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert len(data["toolCalls"]) == 1
+    assert data["answer"]
+
+
+def test_agent_with_knowledge_base_can_autonomously_call_rag(monkeypatch):
+    async def execute(name, user_id, arguments):
+        return [{"topic": "Spring", "mastery": 0.4}]
 
     vector_store.clear()
     asyncio.run(vector_store.upsert([
-        VectorRecord(embed("dependency injection progress"), "owned combined context", {
+        VectorRecord(embed("AOP"), "owned AOP notes", {
             "chunk_id": "combined", "user_id": 1, "knowledge_base_id": 10,
-            "document_id": 101, "file_name": "combined.pdf", "page": 5, "chunk_index": 0,
+            "document_id": 101, "file_name": "notes.pdf", "page": 5, "chunk_index": 0,
         })
     ]))
-    monkeypatch.setattr("app.graph.builder.create_default_registry", lambda settings: FakeRegistry())
-
+    monkeypatch.setattr("app.graph.builder.create_default_registry", lambda settings: FakeRegistry(execute))
+    llm = SequenceLLM(
+        {"content": None, "tool_calls": [_tool_call("1", "search_knowledge_base", {"query": "AOP"})]},
+        {"content": "The notes explain AOP through proxies.", "tool_calls": []},
+    )
+    monkeypatch.setattr("app.graph.builder.LLMFactory.create", lambda self: llm)
     response = TestClient(app).post(
         "/internal/agent/invoke", headers=_headers(monkeypatch),
-        json=_request("AGENT", content="分析我的学习进度", knowledgeBaseId=10)
+        json=_request("AGENT", content="Explain AOP using my notes", knowledgeBaseId=10)
     )
-
     assert response.status_code == 200
     data = response.json()["data"]
-    assert [item["chunkId"] for item in data["citations"]] == ["combined"]
-    assert data["toolCalls"][0]["name"] == "get_learning_progress"
-    assert "owned combined context" in data["answer"]
+    assert data["citations"][0]["chunkId"] == "combined"
+    assert "The notes explain AOP" in data["answer"]
 
 
 def test_stream_emits_start_token_and_done(monkeypatch):

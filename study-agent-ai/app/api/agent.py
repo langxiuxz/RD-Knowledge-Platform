@@ -41,9 +41,13 @@ async def stream(request: AgentInvokeRequest, http_request: Request) -> Streamin
                 if await http_request.is_disconnected():
                     return
                 yield _event("node", {"node": node, "status": "completed"})
+                if node == "agent_reasoning":
+                    for call in state.get("pending_tool_calls", []):
+                        yield _event("tool", {"tool": call.get("name", "unknown"), "status": "started"})
                 if node == "tool_node":
-                    for call in state.get("tool_calls", []):
-                        yield _event("tool", {"tool": call["name"], "status": call["status"]})
+                    for call in state.get("recent_tool_calls", []):
+                        status = "completed" if call["status"] == "success" else "failed"
+                        yield _event("tool", {"tool": call["name"], "status": status})
                 final_state = state
             if final_state is None:
                 raise RuntimeError("Agent graph returned no state")

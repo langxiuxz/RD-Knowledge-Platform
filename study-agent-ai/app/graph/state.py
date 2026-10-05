@@ -12,7 +12,9 @@ class AgentState(TypedDict, total=False):
     messages: List[Dict[str, str]]
     retrieved_chunks: List[Dict[str, Any]]
     pending_tool_calls: List[Dict[str, Any]]
+    agent_steps: int
     tool_calls: List[Dict[str, Any]]
+    recent_tool_calls: List[Dict[str, Any]]
     answer: str
     citations: List[Dict[str, Any]]
     error: Optional[str]

@@ -27,8 +27,19 @@ class SpringBootClient:
     async def get_learning_progress(self, user_id: int, limit: int) -> Any:
         return await self._tool("learning-progress", user_id, limit)
 
-    async def get_wrong_questions(self, user_id: int, limit: int) -> Any:
-        return await self._tool("wrong-questions", user_id, limit)
+    async def get_topic_progress(self, user_id: int, topic: str) -> Any:
+        # Reuse the frozen learning-progress Bridge contract; do not add query fields.
+        rows = await self.get_learning_progress(user_id, 20)
+        needle = topic.casefold()
+        return [row for row in rows or [] if needle in str(row.get("topic", "")).casefold()]
+
+    async def get_wrong_questions(self, user_id: int, limit: int, topic: Optional[str] = None) -> Any:
+        # Topic filtering is applied to the existing user-scoped result, preserving API.md.
+        rows = await self._tool("wrong-questions", user_id, 20 if topic else limit)
+        if topic:
+            needle = topic.casefold()
+            rows = [row for row in rows or [] if needle in str(row.get("topic", "")).casefold()]
+        return (rows or [])[:limit]
 
     async def get_weak_topics(self, user_id: int, limit: int) -> Any:
         return await self._tool("weak-topics", user_id, limit)

@@ -8,7 +8,7 @@ from app.graph.nodes.finalize import finalize
 from app.graph.nodes.generate import GenerateAnswerNode
 from app.graph.nodes.retrieve import RetrieveNode
 from app.graph.nodes.router import route_after_retrieve, route_mode, router
-from app.graph.nodes.tools import ToolNode, agent_reasoning
+from app.graph.nodes.tools import AgentReasoningNode, ToolNode, route_after_agent
 from app.graph.nodes.validate import validate_input
 from app.graph.state import AgentState
 from app.llm.factory import LLMFactory
@@ -22,9 +22,11 @@ def build_graph(settings: Settings):
     builder.add_node("validate_input", validate_input)
     builder.add_node("router", router)
     builder.add_node("retrieve_context", RetrieveNode(vector_store, settings.rag_top_k))
-    builder.add_node("agent_reasoning", agent_reasoning)
-    builder.add_node("tool_node", ToolNode(create_default_registry(settings), settings.tool_max_calls))
-    builder.add_node("generate_answer", GenerateAnswerNode(LLMFactory(settings).create()))
+    llm = LLMFactory(settings).create()
+    registry = create_default_registry(settings)
+    builder.add_node("agent_reasoning", AgentReasoningNode(llm, registry, settings.max_agent_steps))
+    builder.add_node("tool_node", ToolNode(registry, settings.tool_max_calls, vector_store))
+    builder.add_node("generate_answer", GenerateAnswerNode(llm))
     builder.add_node("finalize", finalize)
     builder.add_edge(START, "validate_input")
     builder.add_edge("validate_input", "router")
@@ -32,14 +34,17 @@ def build_graph(settings: Settings):
         "CHAT": "generate_answer",
         "RAG": "retrieve_context",
         "AGENT": "agent_reasoning",
-        "AGENT_RAG": "retrieve_context",
+        "AGENT_RAG": "agent_reasoning",
     })
     builder.add_conditional_edges("retrieve_context", route_after_retrieve, {
         "RAG": "generate_answer",
         "AGENT": "agent_reasoning",
     })
-    builder.add_edge("agent_reasoning", "tool_node")
-    builder.add_edge("tool_node", "generate_answer")
+    builder.add_conditional_edges("agent_reasoning", route_after_agent, {
+        "tool_node": "tool_node",
+        "generate_answer": "generate_answer",
+    })
+    builder.add_edge("tool_node", "agent_reasoning")
     builder.add_edge("generate_answer", "finalize")
     builder.add_edge("finalize", END)
     return builder.compile()
@@ -54,6 +59,10 @@ def initial_state(request: AgentInvokeRequest, trace_id: Optional[str] = None) -
         content=request.content,
         mode=request.mode,
         knowledge_base_id=request.knowledge_base_id,
+        messages=[],
+        tool_calls=[],
+        citations=[],
+        agent_steps=0,
     )
 
 

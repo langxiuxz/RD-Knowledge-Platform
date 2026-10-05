@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -9,6 +10,11 @@ class LLM(ABC):
     @abstractmethod
     async def generate(self, prompt: str) -> str:
         raise NotImplementedError
+
+    async def chat(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Return an assistant message and optional provider tool calls."""
+        prompt = "\n".join(f"{message.get('role')}: {message.get('content', '')}" for message in messages)
+        return {"content": await self.generate(prompt), "tool_calls": []}
 
 
 class LocalFallbackLLM(LLM):
@@ -29,16 +35,12 @@ class OpenAICompatibleLLM(LLM):
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
-    async def generate(self, prompt: str) -> str:
+    async def _complete(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         headers = {"Authorization": f"Bearer {self._settings.llm_api_key}"}
-        payload = {
-            "model": self._settings.llm_model,
-            "messages": [
-                {"role": "system", "content": "You are StudyAgent. Answer accurately and concisely."},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": False,
-        }
+        payload: Dict[str, Any] = {"model": self._settings.llm_model, "messages": messages, "stream": False}
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         timeout = httpx.Timeout(self._settings.llm_timeout)
         base_url = (self._settings.llm_base_url or "").rstrip("/")
         if not base_url:
@@ -47,7 +49,18 @@ class OpenAICompatibleLLM(LLM):
             response = await client.post("/chat/completions", headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
-        return str(data["choices"][0]["message"]["content"]).strip()
+        message = data["choices"][0]["message"]
+        return {"content": message.get("content") or "", "tool_calls": message.get("tool_calls") or []}
+
+    async def generate(self, prompt: str) -> str:
+        result = await self._complete([
+            {"role": "system", "content": "You are StudyAgent, an intelligent learning assistant. Answer accurately and concisely."},
+            {"role": "user", "content": prompt},
+        ])
+        return str(result["content"]).strip()
+
+    async def chat(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return await self._complete(messages, tools)
 
 
 REMOTE_PROVIDERS = {"openai", "openai-compatible", "deepseek"}

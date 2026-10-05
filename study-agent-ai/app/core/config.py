@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     llm_timeout: float = Field(default=30.0, gt=0)
     tool_timeout: float = Field(default=5.0, gt=0)
     tool_max_calls: int = Field(default=4, ge=1, le=8)
+    max_agent_steps: int = Field(default=6, ge=1, le=10)
     rag_top_k: int = Field(default=5, ge=1, le=20)
     vector_store_provider: str = "none"
 
