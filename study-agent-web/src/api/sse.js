@@ -1,4 +1,5 @@
 import { useAuthStore } from '../stores/auth'
+import { refreshAccessToken } from './request'
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 
@@ -57,7 +58,7 @@ export async function streamConversation(conversationId, payload, { signal, onEv
   const authStore = useAuthStore()
   let response = await openStream(conversationId, payload, authStore.token, signal)
   if (response.status === 401 && authStore.refreshToken) {
-    await authStore.refresh()
+    await refreshAccessToken()
     response = await openStream(conversationId, payload, authStore.token, signal)
   }
   if (!response.ok) {

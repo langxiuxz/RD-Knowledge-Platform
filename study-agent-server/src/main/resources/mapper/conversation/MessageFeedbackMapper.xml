@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.conversation.mapper.MessageFeedbackMapper">
+    <insert id="upsert">
+        INSERT INTO sa_message_feedback (message_id, user_id, rating, reason)
+        VALUES (#{messageId}, #{userId}, #{rating}, #{reason})
+        ON DUPLICATE KEY UPDATE rating = VALUES(rating), reason = VALUES(reason), update_time = CURRENT_TIMESTAMP
+    </insert>
+</mapper>

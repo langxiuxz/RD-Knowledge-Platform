@@ -14,6 +14,8 @@ public enum ErrorCode {
     DOCUMENT_PROCESSING(2005, "文档正在处理中，不能重复处理"),
     DOCUMENT_NOT_FOUND(2006, "文档不存在"),
     CONVERSATION_NOT_FOUND(2007, "会话不存在"),
+    MESSAGE_NOT_FOUND(2008, "消息不存在"),
+    FILE_NOT_FOUND(2009, "文件不存在"),
     INTERNAL_ERROR(5000, "服务内部错误"),
     AI_SERVICE_UNAVAILABLE(3001, "AI服务不可用"),
     AI_RATE_LIMITED(3002, "AI请求频率超限"),
@@ -29,16 +31,7 @@ public enum ErrorCode {
     private final int code;
     private final String message;
 
-    ErrorCode(int code, String message) {
-        this.code = code;
-        this.message = message;
-    }
-
-    public int code() {
-        return code;
-    }
-
-    public String message() {
-        return message;
-    }
+    ErrorCode(int code, String message) { this.code = code; this.message = message; }
+    public int code() { return code; }
+    public String message() { return message; }
 }

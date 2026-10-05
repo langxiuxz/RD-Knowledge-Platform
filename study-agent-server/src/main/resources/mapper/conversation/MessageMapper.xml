@@ -40,4 +40,10 @@
         WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND trace_id = #{traceId}
         LIMIT 1
     </select>
+    <select id="findByIdAndOwner" resultType="com.studyagent.conversation.entity.MessageEntity">
+        SELECT id, conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message, create_time
+        FROM sa_message
+        WHERE id = #{id} AND user_id = #{userId}
+        LIMIT 1
+    </select>
 </mapper>

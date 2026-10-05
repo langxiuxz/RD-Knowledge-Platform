@@ -76,7 +76,7 @@ public class QuizService {
         QuizEntity quiz = requireOwned(userId, id);
         var questions = "READY".equals(quiz.getStatus()) || "COMPLETED".equals(quiz.getStatus())
                 ? questionMapper.findByQuizIdAndUserId(id, userId).stream()
-                    .map(q -> new QuizVOs.Question(q.getId(), q.getType(), q.getContent(), readJson(q.getOptionsJson())))
+                    .map(q -> new QuizVOs.Question(q.getId(), q.getType(), q.getContent(), readJsonValue(q.getOptionsJson())))
                     .toList()
                 : List.<QuizVOs.Question>of();
         return new QuizVOs.Detail(id, quiz.getStatus(), quiz.getErrorMessage(), questions);
@@ -117,8 +117,8 @@ public class QuizService {
         answerMapper.findByQuizIdAndUserId(id, userId).forEach(answer -> answers.put(answer.getQuestionId(), answer));
         var rows = questionMapper.findByQuizIdAndUserId(id, userId).stream().map(question -> {
             QuizAnswerEntity answer = answers.get(question.getId());
-            return new QuizVOs.ResultQuestion(question.getId(), readJson(answer.getUserAnswerJson()),
-                    readJson(question.getCorrectAnswerJson()), Boolean.TRUE.equals(answer.getIsCorrect()),
+            return new QuizVOs.ResultQuestion(question.getId(), readJsonValue(answer.getUserAnswerJson()),
+                    readJsonValue(question.getCorrectAnswerJson()), Boolean.TRUE.equals(answer.getIsCorrect()),
                     question.getExplanation());
         }).toList();
         return new QuizVOs.Result(id, quiz.getScore(), rows);
@@ -128,7 +128,7 @@ public class QuizService {
         if (!userAnswer.isTextual() || userAnswer.asText().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "简答题答案不能为空");
         }
-        String reference = readJson(question.getCorrectAnswerJson()).asText();
+        String reference = readJsonNode(question.getCorrectAnswerJson()).asText();
         try {
             AiClient.ShortGradeResponse grade = aiClient.gradeShort(new AiClient.ShortGradeRequest(
                     question.getContent(), reference, userAnswer.asText()));
@@ -143,7 +143,7 @@ public class QuizService {
     }
 
     private boolean gradeObjective(QuizQuestionEntity question, JsonNode userAnswer) {
-        JsonNode correct = readJson(question.getCorrectAnswerJson());
+        JsonNode correct = readJsonNode(question.getCorrectAnswerJson());
         return switch (question.getType()) {
             case "MULTIPLE" -> normalizedSet(userAnswer).equals(normalizedSet(correct));
             case "SINGLE", "JUDGE" -> scalar(userAnswer).equals(scalar(correct));
@@ -177,9 +177,15 @@ public class QuizService {
         }
     }
 
-    private JsonNode readJson(String value) {
+    private JsonNode readJsonNode(String value) {
         if (value == null) return null;
         try { return objectMapper.readTree(value); }
+        catch (JsonProcessingException exception) { throw new BusinessException(ErrorCode.INTERNAL_ERROR); }
+    }
+
+    private Object readJsonValue(String value) {
+        if (value == null) return null;
+        try { return objectMapper.readValue(value, Object.class); }
         catch (JsonProcessingException exception) { throw new BusinessException(ErrorCode.INTERNAL_ERROR); }
     }
 

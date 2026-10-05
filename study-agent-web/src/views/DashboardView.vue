@@ -1,17 +1,13 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { getHealth } from '../api/health'
-
-const health = ref(null)
-onMounted(async () => {
-  try { health.value = (await getHealth()).data.data } catch { health.value = { status: 'DOWN' } }
-})
+import { ElMessage } from 'element-plus'
+import * as dashboardApi from '../api/dashboard'
+import * as quizApi from '../api/quiz'
+const overview=ref({});const trend=ref({dates:[],studyMinutes:[],quizScores:[]});const weakTopics=ref([]);const recentQuizzes=ref([]);const loading=ref(false)
+function dates(){const end=new Date();const begin=new Date(Date.now()-6*86400000);return {begin:begin.toISOString().slice(0,10),end:end.toISOString().slice(0,10)}}
+async function load(){loading.value=true;try{const [o,t,w,q]=await Promise.all([dashboardApi.getDashboardOverview({range:'7d'}),dashboardApi.getDashboardTrend(dates()),dashboardApi.getWeakTopics({limit:5}),quizApi.listQuizzes({page:1,pageSize:5})]);overview.value=o.data.data||{};trend.value=t.data.data||trend.value;weakTopics.value=w.data.data||[];recentQuizzes.value=q.data.data?.rows||[]}catch(e){ElMessage.error(e.response?.data?.msg||'总览加载失败')}finally{loading.value=false}}
+onMounted(load)
 </script>
-
-<template>
-  <section>
-    <h2>学习总览</h2>
-    <el-alert v-if="health" :title="`服务状态：${health.status}`" :type="health.status === 'UP' ? 'success' : 'warning'" :closable="false" />
-    <el-empty v-else description="正在检查服务状态" />
-  </section>
-</template>
+<template><div class="page"><div class="page-heading"><div><h2>学习总览</h2><p>欢迎回来，持续学习会让进步变得可见。</p></div><el-button :loading="loading" @click="load">刷新</el-button></div><el-row :gutter="16" class="stats"><el-col v-for="item in [{label:'学习时长',value:`${overview.studyMinutes||0} 分钟`,icon:'⏱️'},{label:'完成测验',value:overview.quizCount||0,icon:'📝'},{label:'平均得分',value:overview.averageScore||0,icon:'⭐'},{label:'连续学习',value:`${overview.streakDays||0} 天`,icon:'🔥'}]" :key="item.label" :xs="12" :lg="6"><el-card><div class="stat"><span class="icon">{{item.icon}}</span><div><div class="muted">{{item.label}}</div><strong>{{item.value}}</strong></div></div></el-card></el-col></el-row><el-row :gutter="16"><el-col :xs="24" :lg="14"><el-card><template #header>最近 7 天趋势</template><div class="trend"><div v-for="(date,index) in trend.dates" :key="date" class="bar-wrap"><div class="bar" :style="{height:`${Math.max(8,Math.min(140,(trend.studyMinutes[index]||0)*1.5))}px`}" :title="`${trend.studyMinutes[index]||0} 分钟`"></div><span>{{String(date).slice(5)}}</span></div></div></el-card></el-col><el-col :xs="24" :lg="10"><el-card><template #header>薄弱知识点</template><el-empty v-if="!weakTopics.length" description="暂无薄弱知识点"/><div v-for="item in weakTopics" :key="item.topic" class="weak-row"><span>{{item.topic}}</span><span><el-tag type="warning">掌握度 {{item.mastery}}</el-tag><small>错 {{item.wrongCount||0}} 次</small></span></div></el-card></el-col></el-row><el-card class="recent"><template #header>最近测验</template><el-table :data="recentQuizzes" empty-text="暂无测验"><el-table-column prop="title" label="标题"/><el-table-column prop="difficulty" label="难度" width="100"/><el-table-column prop="questionCount" label="题数" width="80"/><el-table-column prop="status" label="状态" width="110"/></el-table></el-card></div></template>
+<style scoped>.page{max-width:1300px;margin:0 auto}.page-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}h2{margin:0 0 6px}p,.muted{color:#909399;margin:0}.stats{margin-bottom:16px}.stat{display:flex;align-items:center;gap:14px}.stat strong{display:block;font-size:24px;margin-top:7px}.icon{font-size:30px}.trend{height:180px;display:flex;align-items:flex-end;justify-content:space-around;gap:10px;padding:0 10px;border-bottom:1px solid #ebeef5}.bar-wrap{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:8px;color:#909399;font-size:12px}.bar{width:24px;background:linear-gradient(#79bbff,#409eff);border-radius:5px 5px 0 0}.weak-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #f0f2f5}.weak-row span:last-child{display:flex;align-items:center;gap:8px}.weak-row small{color:#909399}.recent{margin-top:16px}@media(max-width:600px){.page-heading{align-items:flex-start;flex-direction:column;gap:12px}}
+</style>

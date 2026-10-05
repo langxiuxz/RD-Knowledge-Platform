@@ -9,6 +9,23 @@ const request = axios.create({
 
 let refreshPromise = null
 
+// REST requests and SSE requests share the same refresh operation. This keeps
+// refresh-token rotation from racing when several requests receive 401 at once.
+export function refreshAccessToken() {
+  const authStore = useAuthStore()
+  if (!refreshPromise) {
+    refreshPromise = authStore.refresh().finally(() => { refreshPromise = null })
+  }
+  return refreshPromise
+}
+
+function clearAuthenticationAndRedirect(authStore) {
+  authStore.clear()
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    window.location.assign('/login')
+  }
+}
+
 request.interceptors.request.use((config) => {
   const token = useAuthStore().token
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -24,15 +41,12 @@ request.interceptors.response.use(
       return Promise.reject(error)
     }
     original._retry = true
-    if (!refreshPromise) {
-      refreshPromise = authStore.refresh().finally(() => { refreshPromise = null })
-    }
     try {
-      await refreshPromise
+      await refreshAccessToken()
       original.headers.Authorization = `Bearer ${authStore.token}`
       return request(original)
     } catch (refreshError) {
-      authStore.clear()
+      clearAuthenticationAndRedirect(authStore)
       return Promise.reject(refreshError)
     }
   }

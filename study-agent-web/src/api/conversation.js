@@ -7,5 +7,4 @@ export const updateConversation = (id, payload) => request.put(`/conversations/$
 export const deleteConversation = (id) => request.delete(`/conversations/${id}`)
 export const listMessages = (id, params) => request.get(`/conversations/${id}/messages`, { params })
 export const sendMessage = (id, payload) => request.post(`/conversations/${id}/messages`, payload)
-export const stopGeneration = (id, traceId) =>
-  request.delete(`/conversations/${id}/generation/${encodeURIComponent(traceId)}`)
+export const stopGeneration = (id, traceId) => request.delete(`/conversations/${id}/generation/${encodeURIComponent(traceId)}`)

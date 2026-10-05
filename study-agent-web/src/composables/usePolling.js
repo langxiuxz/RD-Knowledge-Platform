@@ -1,15 +1,23 @@
 import { onBeforeUnmount } from 'vue'
 
-export function usePolling(task, { interval = 2000, timeout = 60000 } = {}) {
+export function usePolling(task, { interval = 2000, timeout = 120000, onError } = {}) {
   let timer
-  let startedAt
-  function stop() { clearTimeout(timer); timer = undefined }
+  let startedAt = 0
+  let stopped = false
+  function stop() { stopped = true; if (timer) clearTimeout(timer); timer = undefined }
   async function start() {
-    stop(); startedAt = Date.now()
+    stop(); stopped = false; startedAt = Date.now()
     const tick = async () => {
-      const result = await task()
-      if (result === 'READY' || result === 'FAILED' || Date.now() - startedAt >= timeout) return stop()
-      timer = setTimeout(tick, interval)
+      if (stopped) return
+      try {
+        const result = await task()
+        const status = typeof result === 'string' ? result : result?.status || result?.generationStatus
+        if (status === 'READY' || status === 'FAILED' || Date.now() - startedAt >= timeout) return stop()
+      } catch (error) {
+        onError?.(error)
+        return stop()
+      }
+      if (!stopped) timer = setTimeout(tick, interval)
     }
     await tick()
   }
