@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from app.core.config import get_settings
 from app.core.exceptions import AIServiceError
 from app.core.security import require_internal_token
-from app.llm.factory import LLMFactory
+from app.llm.factory import LLMFactory, is_remote_provider_configured
 from app.llm.structured import parse_structured_output
 from app.schemas.plan import GeneratedPlanTask, PlanGenerateRequest, PlanGenerateResponse
 
@@ -29,7 +29,7 @@ async def generate(request: PlanGenerateRequest) -> dict:
 
 async def _generate(request: PlanGenerateRequest) -> PlanGenerateResponse:
     settings = get_settings()
-    if settings.llm_provider.lower() not in {"openai", "openai-compatible"} or not settings.llm_api_key:
+    if not is_remote_provider_configured(settings):
         topics = request.profile.weak_topics or ["综合复习"]
         days = (request.end_date - request.start_date).days + 1
         tasks = [GeneratedPlanTask(date=request.start_date + timedelta(days=index),

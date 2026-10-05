@@ -10,14 +10,17 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"
+    # Secrets must be supplied by environment variables or a local .env file.
     internal_token: str = ""
     spring_boot_base_url: str = "http://localhost:8080"
     spring_boot_connect_timeout: float = Field(default=2.0, gt=0)
     spring_boot_read_timeout: float = Field(default=30.0, gt=0)
+    # Supported remote providers: deepseek, openai, openai-compatible.
+    # Keep local startup independent from external API credentials.
     llm_provider: str = "none"
     llm_api_key: str = ""
     llm_model: str = ""
-    llm_base_url: str = "https://api.openai.com/v1"
+    llm_base_url: str = "https://api.deepseek.com"
     llm_timeout: float = Field(default=30.0, gt=0)
     tool_timeout: float = Field(default=5.0, gt=0)
     tool_max_calls: int = Field(default=4, ge=1, le=8)

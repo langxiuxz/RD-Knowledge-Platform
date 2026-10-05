@@ -80,6 +80,29 @@ class ChatServiceTest {
     }
 
     @Test
+    void stream_agentWithoutKnowledgeBase_shouldAllowToolsWithoutRag() throws Exception {
+        ChatService service = service();
+        when(conversationService.requireOwned(1L, 301L)).thenReturn(conversation(301L, null, "AGENT"));
+        when(persistenceService.createExchange(1L, 301L, "plan"))
+                .thenReturn(new MessagePersistenceService.MessageExchange(9000L, 9001L));
+        doAnswer(invocation -> {
+            AiClient.StreamEventConsumer consumer = invocation.getArgument(1);
+            consumer.accept(new AiClient.StreamEvent("start", "{\"traceId\":\"trace-agent\"}"));
+            consumer.accept(new AiClient.StreamEvent("done", "{\"traceId\":\"trace-agent\"}"));
+            return null;
+        }).when(aiClient).stream(any(), any());
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        service.stream(1L, 301L, new SendMessageRequest("plan", false, true)).writeTo(output);
+
+        ArgumentCaptor<AiClient.AgentRequest> request = ArgumentCaptor.forClass(AiClient.AgentRequest.class);
+        verify(aiClient).stream(request.capture(), any());
+        assertThat(request.getValue().mode()).isEqualTo("AGENT");
+        assertThat(request.getValue().knowledgeBaseId()).isNull();
+        assertThat(output.toString(StandardCharsets.UTF_8)).contains("event: done");
+    }
+
+    @Test
     void stream_whenDone_shouldRelayEventsAndPersistOnce() throws Exception {
         ChatService service = service();
         when(conversationService.requireOwned(1L, 301L)).thenReturn(conversation(301L, 10L, "CHAT"));

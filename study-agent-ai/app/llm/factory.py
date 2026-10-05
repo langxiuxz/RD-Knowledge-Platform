@@ -40,11 +40,22 @@ class OpenAICompatibleLLM(LLM):
             "stream": False,
         }
         timeout = httpx.Timeout(self._settings.llm_timeout)
-        async with httpx.AsyncClient(base_url=self._settings.llm_base_url, timeout=timeout) as client:
+        base_url = (self._settings.llm_base_url or "").rstrip("/")
+        if not base_url:
+            raise ValueError("LLM_BASE_URL is required for a remote LLM provider")
+        async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
             response = await client.post("/chat/completions", headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
         return str(data["choices"][0]["message"]["content"]).strip()
+
+
+REMOTE_PROVIDERS = {"openai", "openai-compatible", "deepseek"}
+
+
+def is_remote_provider_configured(settings: Settings) -> bool:
+    provider = (settings.llm_provider or "").strip().lower()
+    return provider in REMOTE_PROVIDERS and bool(settings.llm_api_key and settings.llm_model)
 
 
 class LLMFactory:
@@ -52,7 +63,6 @@ class LLMFactory:
         self.settings = settings
 
     def create(self) -> LLM:
-        if (self.settings.llm_provider.lower() in {"openai", "openai-compatible"}
-                and self.settings.llm_api_key and self.settings.llm_model):
+        if is_remote_provider_configured(self.settings):
             return OpenAICompatibleLLM(self.settings)
         return LocalFallbackLLM()

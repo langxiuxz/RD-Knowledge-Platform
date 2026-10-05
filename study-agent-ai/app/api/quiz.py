@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from app.core.config import get_settings
 from app.core.exceptions import AIServiceError
 from app.core.security import require_internal_token
-from app.llm.factory import LLMFactory
+from app.llm.factory import LLMFactory, is_remote_provider_configured
 from app.llm.structured import parse_structured_output
 from app.rag.vector_store import vector_store
 from app.schemas.quiz import (
@@ -46,7 +46,7 @@ async def grade_short(request: ShortGradeRequest) -> dict:
 
 async def _generate(request: QuizGenerateRequest) -> QuizGenerateResponse:
     settings = get_settings()
-    if settings.llm_provider.lower() not in {"openai", "openai-compatible"} or not settings.llm_api_key:
+    if not is_remote_provider_configured(settings):
         return _local_quiz(request)
     context = ""
     if request.knowledge_base_id is not None:
@@ -68,7 +68,7 @@ async def _generate(request: QuizGenerateRequest) -> QuizGenerateResponse:
 
 async def _grade_short(request: ShortGradeRequest) -> ShortGradeResponse:
     settings = get_settings()
-    if settings.llm_provider.lower() not in {"openai", "openai-compatible"} or not settings.llm_api_key:
+    if not is_remote_provider_configured(settings):
         ratio = SequenceMatcher(None, request.reference_answer.lower(), request.user_answer.lower()).ratio()
         score = round(ratio, 4)
         return ShortGradeResponse(score=score, correct=score >= 0.6,

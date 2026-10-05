@@ -9,8 +9,8 @@ spring:
     default: dev
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/study_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
-    username: ${DB_USERNAME:study_agent}
-    password: ${DB_PASSWORD:}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:Liang123.}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       initialization-fail-timeout: -1
@@ -20,7 +20,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:Liang123.}
       timeout: 2s
   flyway:
     enabled: ${FLYWAY_ENABLED:false}
@@ -51,7 +51,7 @@ app:
   generation:
     ttl: ${GENERATION_STATE_TTL:10m}
   internal:
-    token: ${INTERNAL_TOKEN:}
+    token: ${INTERNAL_TOKEN:studyagent-local-dev-2026-a8f7c2e9d4b64138}
   storage:
     local-root: ${FILE_STORAGE_ROOT:./data/files}
     public-base-url: ${FILE_PUBLIC_BASE_URL:http://localhost:8080/internal/files}
