@@ -21,4 +21,10 @@ public interface MessageMapper {
     MessageEntity findByTraceAndOwner(@Param("conversationId") Long conversationId, @Param("userId") Long userId,
                                       @Param("traceId") String traceId);
     MessageEntity findByIdAndOwner(@Param("id") Long id, @Param("userId") Long userId);
+    MessageEntity findByIdConversationAndOwner(@Param("id") Long id, @Param("conversationId") Long conversationId,
+                                              @Param("userId") Long userId);
+    List<MessageEntity> findRecentCompletedContext(@Param("conversationId") Long conversationId,
+                                                   @Param("userId") Long userId,
+                                                   @Param("beforeId") Long beforeId,
+                                                   @Param("limit") int limit);
 }

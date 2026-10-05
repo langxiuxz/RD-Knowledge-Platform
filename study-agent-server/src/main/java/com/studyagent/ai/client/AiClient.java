@@ -23,7 +23,9 @@ public interface AiClient {
     record RetrievedChunk(String chunkId, Long documentId, String fileName, Integer page,
                           String content, Double score) {}
     record AgentRequest(Long userId, Long conversationId, Long messageId, String content,
-                        String mode, Long knowledgeBaseId, boolean stream) {}
+                        String mode, Long knowledgeBaseId, boolean stream,
+                        List<ConversationMessage> recentMessages) {}
+    record ConversationMessage(String role, String content) {}
     record Citation(String chunkId, Long documentId, String fileName, Integer page, Double score) {}
     record ToolCall(String name, String status, Object result, String error) {}
     record AgentResponse(String answer, List<Citation> citations, List<ToolCall> toolCalls, String traceId) {}

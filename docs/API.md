@@ -2792,6 +2792,7 @@ form-data: file=@avatar.png&type=AVATAR
 | mode | string | 是 | CHAT/RAG/AGENT |
 | knowledgeBaseId | number | 否 | 知识库ID |
 | stream | boolean | 是 | 是否流式 |
+| recentMessages | array | 否 | 最近已完成的会话消息，最多8条；每条role为user/assistant，content最多2000字符；仅作有限Conversation上下文 |
 
 请求参数样例：
 
@@ -2803,7 +2804,11 @@ form-data: file=@avatar.png&type=AVATAR
   "content": "根据我的错题安排复习",
   "mode": "AGENT",
   "knowledgeBaseId": 12,
-  "stream": false
+  "stream": false,
+  "recentMessages": [
+    { "role": "user", "content": "我在复习 Java" },
+    { "role": "assistant", "content": "最近主要关注面向对象基础。" }
+  ]
 }
 ```
 
@@ -3196,7 +3201,7 @@ SHORT 评分必须先全部成功，Spring Boot 才能在一个数据库事务�
 
 ## 8.8 Agent流式执行
 
-### 8.6.1 基本信息
+### 8.8.1 基本信息
 
 | 项目 | 内容 |
 | --- | --- |
@@ -3204,7 +3209,7 @@ SHORT 评分必须先全部成功，Spring Boot 才能在一个数据库事务�
 | 请求方式 | POST |
 | 接口描述 | Spring Boot 调用 FastAPI/LangGraph 的内部流式接口，并将事件转发为对外 SSE，避免外部流式接口内部仍使用非流式调用。 |
 
-### 8.6.2 请求参数
+### 8.8.2 请求参数
 
 参数格式：application/json
 
@@ -3216,6 +3221,7 @@ SHORT 评分必须先全部成功，Spring Boot 才能在一个数据库事务�
 | content | string | 是 | 问题 |
 | mode | string | 是 | CHAT/RAG/AGENT |
 | knowledgeBaseId | number | 否 | 知识库ID |
+| recentMessages | array | 否 | 最近已完成的会话消息，最多8条；每条role为user/assistant，content最多2000字符 |
 
 请求参数样例：
 
@@ -3226,11 +3232,14 @@ SHORT 评分必须先全部成功，Spring Boot 才能在一个数据库事务�
   "messageId": 9010,
   "content": "根据我的学习进度安排本周复习计划",
   "mode": "AGENT",
-  "knowledgeBaseId": 12
+  "knowledgeBaseId": 12,
+  "recentMessages": [
+    { "role": "user", "content": "我在复习 Java" }
+  ]
 }
 ```
 
-### 8.6.3 响应数据
+### 8.8.3 响应数据
 
 参数格式：text/event-stream
 
@@ -3253,7 +3262,7 @@ event: done
 data: {"traceId":"trace_93aa","finishReason":"stop"}
 ```
 
-### 8.6.4 备注说明
+### 8.8.4 备注说明
 
 仅允许内网服务调用；响应 Content-Type 为 text/event-stream。Spring Boot 负责鉴权、资源归属校验、消息持久化和向前端转发。
 
@@ -3267,6 +3276,9 @@ data: {"traceId":"trace_93aa","finishReason":"stop"}
 | get_wrong_questions | /internal/tools/wrong-questions | POST |
 | get_weak_topics | /internal/tools/weak-topics | POST |
 | get_recent_quiz_results | /internal/tools/recent-quiz-results | POST |
+| get_learner_profile | /internal/tools/learner-profile | POST |
+| context profile lookup | /internal/tools/memories/query | POST |
+| validated memory candidate store | /internal/tools/memories/candidates | POST |
 
 请求体统一为：
 
@@ -3277,7 +3289,9 @@ data: {"traceId":"trace_93aa","finishReason":"stop"}
 }
 ```
 
-`userId` 必须大于 0，`limit` 取值 1～20。响应使用统一 `Result<T>`；接口只返回当前 `userId` 的数据，不提供任意 SQL、任意 HTTP 或写操作能力。
+`userId` 必须大于 0，`limit` 取值 1～20。响应使用统一 `Result<T>`；只读查询只返回当前 `userId` 的数据，不提供任意 SQL、任意 HTTP 或业务事实写操作能力。`learner-profile` 汇总真实进度、最近学习记录、ACTIVE/READY 计划和已完成测验；Profile 不持久化、不写回 mastery。
+
+记忆 Bridge 仅供内部服务：`memories/query` 请求 `{userId, query, limit}`，limit 最大 20；`memories/candidates` 请求 `{userId, conversationId, messageId, category, memoryKey, value, evidenceText}`。候选必须可由指定用户消息原文验证，且类别仅限学习目标、解释偏好、学习方式偏好；业务学习事实不允许写入 Memory。相同 user/category/key 使用 upsert 覆盖旧偏好。所有 memory 查询均按 userId 隔离。
 
 # 9. 错误码与安全约定
 

@@ -28,6 +28,33 @@ class QuizSubmissionPersistenceServiceTest {
     @Mock LearningRecordMapper learningRecordMapper;
 
     @Test
+    void commit_whenTopicExceedsDerivedColumnLength_shouldBoundTopicTo128CodePoints() {
+        QuizSubmissionPersistenceService service = new QuizSubmissionPersistenceService(
+                quizMapper, answerMapper, wrongQuestionMapper, progressMapper, learningRecordMapper);
+        String longTopic = "😀".repeat(130);
+        QuizEntity quiz = new QuizEntity();
+        quiz.setId(51L);
+        quiz.setStatus("READY");
+        quiz.setTitle("Quiz");
+        quiz.setTopic(longTopic);
+        QuizQuestionEntity question = new QuizQuestionEntity();
+        question.setId(12L);
+        when(quizMapper.findByIdAndUserId(51L, 1L)).thenReturn(quiz);
+        when(quizMapper.markCompleted(any(), any(), any(), any(Integer.class), any(Integer.class), any())).thenReturn(1);
+
+        service.commit(1L, 51L, List.of(
+                new QuizSubmissionPersistenceService.GradedAnswer(question, "\"B\"", false)));
+
+        String expectedTopic = "😀".repeat(128);
+        verify(wrongQuestionMapper).upsertWrong(1L, 12L, expectedTopic);
+        verify(progressMapper).recordQuizAnswer(1L, expectedTopic, 0, 1);
+        org.mockito.ArgumentCaptor<com.studyagent.learning.entity.LearningRecordEntity> recordCaptor =
+                org.mockito.ArgumentCaptor.forClass(com.studyagent.learning.entity.LearningRecordEntity.class);
+        verify(learningRecordMapper).insert(recordCaptor.capture());
+        org.assertj.core.api.Assertions.assertThat(recordCaptor.getValue().getTopic()).isEqualTo(expectedTopic);
+    }
+
+    @Test
     void commit_whenAnswerIsWrong_shouldUpsertWrongQuestionAndProgress() {
         QuizSubmissionPersistenceService service = new QuizSubmissionPersistenceService(
                 quizMapper, answerMapper, wrongQuestionMapper, progressMapper, learningRecordMapper);

@@ -15,6 +15,7 @@ public class ToolDataRow {
     private BigDecimal quizAccuracy;
     private Integer studyMinutes;
     private Integer wrongCount;
+    private Integer quizQuestionCount;
     private Boolean mastered;
     private BigDecimal score;
     private Integer correctCount;
@@ -42,6 +43,8 @@ public class ToolDataRow {
     public void setStudyMinutes(Integer studyMinutes) { this.studyMinutes = studyMinutes; }
     public Integer getWrongCount() { return wrongCount; }
     public void setWrongCount(Integer wrongCount) { this.wrongCount = wrongCount; }
+    public Integer getQuizQuestionCount() { return quizQuestionCount; }
+    public void setQuizQuestionCount(Integer quizQuestionCount) { this.quizQuestionCount = quizQuestionCount; }
     public Boolean getMastered() { return mastered; }
     public void setMastered(Boolean mastered) { this.mastered = mastered; }
     public BigDecimal getScore() { return score; }

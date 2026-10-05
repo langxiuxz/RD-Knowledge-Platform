@@ -24,6 +24,19 @@ class SpringBootClient:
                    "chunkCount": chunk_count, "errorMessage": error_message}
         await self._request_json("POST", f"/internal/callbacks/documents/{document_id}/progress", payload)
 
+    async def get_learner_profile(self, user_id: int) -> Any:
+        envelope = await self._request_json("POST", "/internal/tools/learner-profile", {"userId": user_id, "limit": 1})
+        return envelope.get("data")
+
+    async def query_memories(self, user_id: int, query: str, limit: int = 20) -> Any:
+        envelope = await self._request_json("POST", "/internal/tools/memories/query",
+                                            {"userId": user_id, "query": query[:1000], "limit": limit})
+        return envelope.get("data")
+
+    async def store_memory_candidate(self, candidate: Dict[str, Any]) -> bool:
+        envelope = await self._request_json("POST", "/internal/tools/memories/candidates", candidate)
+        return bool(envelope.get("data"))
+
     async def get_learning_progress(self, user_id: int, limit: int) -> Any:
         return await self._tool("learning-progress", user_id, limit)
 

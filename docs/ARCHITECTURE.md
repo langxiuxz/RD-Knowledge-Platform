@@ -2091,3 +2091,12 @@ MySQL负责业务事实
 ```
 
 这套边界应作为 StudyAgent 后续 Codex 编码的架构基线。
+
+
+# Learner Profile 与 Long-term Memory（增量）
+
+Learner Profile 由 Spring Boot Tool Bridge 在请求时从 `sa_topic_progress`、`sa_learning_record`、ACTIVE/READY `sa_study_plan` 和 COMPLETED `sa_quiz` 即时聚合，不单独保存画像快照；所有查询按 userId 限定。FastAPI 可通过白名单 `get_learner_profile` 自主调用。
+
+Long-term Memory 是独立的有限偏好/目标存储，不复制 mastery、错题、测验或学习记录。FastAPI context builder 只识别显式、稳定的候选，Spring Boot 再核验用户消息归属、原文证据、类别白名单并按 `(user_id, category, memory_key)` upsert。查询按当前 userId 获取有限候选后按当前问题筛选。
+
+每次请求组合有界的 recent completed messages（最多 8 条、单条最多 2000 字符）、最多 5 条相关 Memory 和按需调用的 Learner Profile/其他 Tool Results。System Prompt 分开约束 Business Facts、Learner Profile、Long-term Memory 与 Conversation；Memory 不得用于推断真实学习状态。候选写入/记忆读取失败采用 fail-soft，不阻断原 CHAT/RAG/AGENT/SSE。

@@ -7,6 +7,8 @@ class AgentState(TypedDict, total=False):
     conversation_id: int
     message_id: int
     content: str
+    recent_messages: List[Dict[str, str]]
+    long_term_memories: List[Dict[str, Any]]
     mode: str
     knowledge_base_id: Optional[int]
     messages: List[Dict[str, str]]

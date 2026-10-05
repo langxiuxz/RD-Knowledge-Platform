@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.core.config import Settings
 from app.graph.nodes.finalize import finalize
+from app.graph.nodes.context import build_context
 from app.graph.nodes.generate import GenerateAnswerNode
 from app.graph.nodes.retrieve import RetrieveNode
 from app.graph.nodes.router import route_after_retrieve, route_mode, router
@@ -20,6 +21,7 @@ from app.tools.registry import create_default_registry
 def build_graph(settings: Settings):
     builder = StateGraph(AgentState)
     builder.add_node("validate_input", validate_input)
+    builder.add_node("build_context", build_context(settings))
     builder.add_node("router", router)
     builder.add_node("retrieve_context", RetrieveNode(vector_store, settings.rag_top_k))
     llm = LLMFactory(settings).create()
@@ -29,7 +31,8 @@ def build_graph(settings: Settings):
     builder.add_node("generate_answer", GenerateAnswerNode(llm))
     builder.add_node("finalize", finalize)
     builder.add_edge(START, "validate_input")
-    builder.add_edge("validate_input", "router")
+    builder.add_edge("validate_input", "build_context")
+    builder.add_edge("build_context", "router")
     builder.add_conditional_edges("router", route_mode, {
         "CHAT": "generate_answer",
         "RAG": "retrieve_context",
@@ -57,6 +60,8 @@ def initial_state(request: AgentInvokeRequest, trace_id: Optional[str] = None) -
         conversation_id=request.conversation_id,
         message_id=request.message_id,
         content=request.content,
+        recent_messages=[item.model_dump() for item in request.recent_messages],
+        long_term_memories=[],
         mode=request.mode,
         knowledge_base_id=request.knowledge_base_id,
         messages=[],

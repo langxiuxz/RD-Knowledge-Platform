@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.internal.mapper.LongTermMemoryMapper">
+    <select id="findRecentByUserId" resultType="com.studyagent.internal.entity.LongTermMemoryEntity">
+        SELECT id, user_id, category, memory_key, memory_value, source_message_id, create_time, update_time
+        FROM sa_long_term_memory
+        WHERE user_id = #{userId}
+        ORDER BY update_time DESC, id DESC
+        LIMIT #{limit}
+    </select>
+    <insert id="upsert">
+        INSERT INTO sa_long_term_memory (user_id, category, memory_key, memory_value, source_message_id)
+        VALUES (#{userId}, #{category}, #{memoryKey}, #{memoryValue}, #{sourceMessageId})
+        ON DUPLICATE KEY UPDATE memory_value = VALUES(memory_value),
+                                source_message_id = VALUES(source_message_id),
+                                update_time = CURRENT_TIMESTAMP
+    </insert>
+</mapper>

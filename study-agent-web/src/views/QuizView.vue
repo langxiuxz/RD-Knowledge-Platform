@@ -12,7 +12,27 @@ async function generate() { try { const r = await quizApi.generateQuiz(form); di
 function normalizeOptions(options) { return Array.isArray(options) ? options : [] }
 function answerValue(q) { return answers[q.id] ?? (q.type === 'MULTIPLE' ? [] : '') }
 async function openQuiz(id) { try { const r = await quizApi.getQuiz(id); detail.value = r.data.data; result.value = null; for (const q of detail.value.questions || []) answers[q.id] = q.type === 'MULTIPLE' ? [] : ''; } catch (e) { ElMessage.error(e.response?.data?.msg || '测验详情加载失败') } }
-async function submit() { if (!detail.value?.questions?.length) return; submitting.value = true; try { const body = { answers: detail.value.questions.map(q => ({ questionId: q.id, answer: answers[q.id] ?? (q.type === 'MULTIPLE' ? [] : '') })) }; const r = await quizApi.submitQuiz(detail.value.id, body); ElMessage.success(`提交完成，得分 ${r.data.data.score}`); const rr = await quizApi.getQuizResult(detail.value.id); result.value = rr.data.data; await load() } catch (e) { ElMessage.error(e.response?.data?.msg || '提交失败') } finally { submitting.value = false } }
+async function submit() {
+  if (!detail.value?.questions?.length) return
+  submitting.value = true
+  try {
+    const body = { answers: detail.value.questions.map(q => ({ questionId: q.id, answer: answers[q.id] ?? (q.type === 'MULTIPLE' ? [] : '') })) }
+    const submitted = await quizApi.submitQuiz(detail.value.id, body)
+    ElMessage.success(`提交完成，得分 ${submitted.data.data.score}`)
+    detail.value.status = 'COMPLETED'
+    await load()
+    try {
+      const response = await quizApi.getQuizResult(detail.value.id)
+      result.value = response.data.data
+    } catch {
+      ElMessage.warning('测验已提交成功，但结果详情暂时无法加载，请稍后从已完成测验中查看')
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.msg || '提交失败')
+  } finally {
+    submitting.value = false
+  }
+}
 function typeText(t) { return ({ SINGLE: '单选题', MULTIPLE: '多选题', JUDGE: '判断题', SHORT: '简答题' })[t] || t }
 onMounted(load)
 </script>

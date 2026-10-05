@@ -6,6 +6,8 @@ import com.studyagent.common.exception.ErrorCode;
 import com.studyagent.conversation.dto.SendMessageRequest;
 import com.studyagent.conversation.entity.ConversationEntity;
 import com.studyagent.conversation.entity.MessageEntity;
+import com.studyagent.conversation.mapper.MessageMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.studyagent.conversation.vo.AssistantMessageVO;
 import com.studyagent.conversation.vo.MessageCitationVO;
 import com.studyagent.conversation.vo.SendMessageVO;
@@ -31,14 +33,23 @@ public class ChatService {
     private final AiClient aiClient;
     private final GenerationStateService generationStateService;
     private final ObjectMapper objectMapper;
+    private final MessageMapper messageMapper;
 
     public ChatService(ConversationService conversationService, MessagePersistenceService persistenceService,
                        AiClient aiClient, GenerationStateService generationStateService, ObjectMapper objectMapper) {
+        this(conversationService, persistenceService, aiClient, generationStateService, objectMapper, null);
+    }
+
+    @Autowired
+    public ChatService(ConversationService conversationService, MessagePersistenceService persistenceService,
+                       AiClient aiClient, GenerationStateService generationStateService, ObjectMapper objectMapper,
+                       MessageMapper messageMapper) {
         this.conversationService = conversationService;
         this.persistenceService = persistenceService;
         this.aiClient = aiClient;
         this.generationStateService = generationStateService;
         this.objectMapper = objectMapper;
+        this.messageMapper = messageMapper;
     }
 
     public SendMessageVO send(Long userId, Long conversationId, SendMessageRequest request) {
@@ -207,8 +218,17 @@ public class ChatService {
 
     private AiClient.AgentRequest agentRequest(Long userId, ConversationEntity conversation, Long messageId,
                                                 String content, String mode, Long knowledgeBaseId, boolean stream) {
+        List<AiClient.ConversationMessage> recent = new ArrayList<>();
+        if (messageMapper != null) {
+            messageMapper.findRecentCompletedContext(conversation.getId(), userId, messageId, 8).stream()
+                    .filter(message -> message.getContent() != null && !message.getContent().isBlank())
+                    .map(message -> new AiClient.ConversationMessage(message.getRole(),
+                            message.getContent().length() > 2000 ? message.getContent().substring(0, 2000) : message.getContent()))
+                    .forEach(recent::add);
+            java.util.Collections.reverse(recent);
+        }
         return new AiClient.AgentRequest(userId, conversation.getId(), messageId, content, mode,
-                knowledgeBaseId, stream);
+                knowledgeBaseId, stream, recent);
     }
 
     private List<MessageCitationVO> toCitationVOs(List<AiClient.Citation> citations) {

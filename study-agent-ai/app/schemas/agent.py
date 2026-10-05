@@ -3,6 +3,11 @@ from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=2000)
+
+
 class AgentInvokeRequest(BaseModel):
     user_id: int = Field(alias="userId", gt=0)
     conversation_id: int = Field(alias="conversationId", gt=0)
@@ -11,6 +16,7 @@ class AgentInvokeRequest(BaseModel):
     mode: Literal["CHAT", "RAG", "AGENT"]
     knowledge_base_id: Optional[int] = Field(default=None, alias="knowledgeBaseId", gt=0)
     stream: bool
+    recent_messages: List["ConversationMessage"] = Field(default_factory=list, alias="recentMessages", max_length=8)
 
     model_config = {"populate_by_name": True}
 

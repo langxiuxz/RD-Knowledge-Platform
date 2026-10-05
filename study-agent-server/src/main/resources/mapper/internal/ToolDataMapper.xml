@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.studyagent.internal.mapper.ToolDataMapper">
     <select id="findLearningProgress" resultType="com.studyagent.internal.entity.ToolDataRow">
-        SELECT topic, mastery, quiz_accuracy, study_minutes, wrong_count
+        SELECT topic, mastery, quiz_accuracy, study_minutes, wrong_count, quiz_question_count
         FROM sa_topic_progress WHERE user_id = #{userId}
         ORDER BY update_time DESC LIMIT #{limit}
     </select>
@@ -14,7 +14,7 @@
         ORDER BY w.mastered ASC, w.wrong_count DESC, w.last_wrong_at DESC LIMIT #{limit}
     </select>
     <select id="findWeakTopics" resultType="com.studyagent.internal.entity.ToolDataRow">
-        SELECT topic, mastery, quiz_accuracy, wrong_count
+        SELECT topic, mastery, quiz_accuracy, study_minutes, wrong_count, quiz_question_count
         FROM sa_topic_progress WHERE user_id = #{userId}
         ORDER BY mastery ASC, wrong_count DESC LIMIT #{limit}
     </select>
@@ -22,5 +22,21 @@
         SELECT id, title, topic, difficulty, status, score, correct_count, wrong_count, create_time
         FROM sa_quiz WHERE user_id = #{userId} AND status = 'COMPLETED'
         ORDER BY create_time DESC, id DESC LIMIT #{limit}
+    </select>
+    <select id="findRecentLearningForProfile" resultType="com.studyagent.learning.entity.LearningRecordEntity">
+        SELECT id, user_id, type, topic, duration_minutes, source_id, remark, create_time
+        FROM sa_learning_record WHERE user_id = #{userId}
+        ORDER BY create_time DESC, id DESC LIMIT #{limit}
+    </select>
+    <select id="findActivePlansForProfile" resultType="com.studyagent.plan.entity.StudyPlanEntity">
+        SELECT p.id, p.user_id, p.title, p.goal, p.start_date, p.end_date, p.daily_minutes,
+               p.focus_topics_json, p.generation_status, p.status,
+               (SELECT COUNT(*) FROM sa_study_plan_task t
+                WHERE t.plan_id = p.id AND t.user_id = p.user_id) AS task_count,
+               (SELECT COUNT(*) FROM sa_study_plan_task t
+                WHERE t.plan_id = p.id AND t.user_id = p.user_id AND t.completed = 1) AS completed_task_count
+        FROM sa_study_plan p
+        WHERE p.user_id = #{userId} AND p.status = 'ACTIVE' AND p.generation_status = 'READY'
+        ORDER BY p.update_time DESC, p.id DESC LIMIT #{limit}
     </select>
 </mapper>

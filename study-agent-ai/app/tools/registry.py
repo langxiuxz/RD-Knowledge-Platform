@@ -14,6 +14,7 @@ ALLOWED_TOOLS = frozenset({
     "get_wrong_questions",
     "get_weak_topics",
     "get_recent_quiz_results",
+    "get_learner_profile",
     "search_knowledge_base",
 })
 
@@ -60,6 +61,7 @@ class ToolRegistry:
             "get_wrong_questions": (WrongQuestionArguments, "Get recent wrong questions for the current user, optionally filtered by topic; limit 1 to 20."),
             "get_weak_topics": (ToolArguments, "Get weak topics for the current user."),
             "get_recent_quiz_results": (ToolArguments, "Get recent quiz results for the current user."),
+            "get_learner_profile": (ToolArguments, "Get a compact learner profile aggregated only from the current user's real progress, learning records, active plans and completed quizzes. Use for questions about overall learning status; never infer missing facts."),
         }
         result = []
         for name, (schema, description) in descriptions.items():
@@ -91,4 +93,5 @@ def create_default_registry(settings: Settings) -> ToolRegistry:
     registry.register("get_wrong_questions", lambda user_id, args: client.get_wrong_questions(user_id, args.limit, args.topic))
     registry.register("get_weak_topics", lambda user_id, args: client.get_weak_topics(user_id, args.limit))
     registry.register("get_recent_quiz_results", lambda user_id, args: client.get_recent_quiz_results(user_id, args.limit))
+    registry.register("get_learner_profile", lambda user_id, args: client.get_learner_profile(user_id))
     return registry

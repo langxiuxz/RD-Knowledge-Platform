@@ -20,6 +20,8 @@ import java.util.List;
 
 @Service
 public class QuizSubmissionPersistenceService {
+    private static final int MAX_TOPIC_LENGTH = 128;
+
     private final QuizMapper quizMapper;
     private final QuizAnswerMapper answerMapper;
     private final WrongQuestionMapper wrongQuestionMapper;
@@ -67,7 +69,7 @@ public class QuizSubmissionPersistenceService {
         LearningRecordEntity record = new LearningRecordEntity();
         record.setUserId(userId);
         record.setType("QUIZ");
-        record.setTopic(quiz.getTopic() == null || quiz.getTopic().isBlank() ? "综合测验" : quiz.getTopic());
+        record.setTopic(normalizeTopic(quiz.getTopic(), "综合测验"));
         record.setDurationMinutes(0);
         record.setSourceId(quizId);
         record.setRemark("完成测验：" + quiz.getTitle());
@@ -76,9 +78,17 @@ public class QuizSubmissionPersistenceService {
     }
 
     private String topicOf(QuizQuestionEntity question, QuizEntity quiz) {
-        if (question.getTopic() != null && !question.getTopic().isBlank()) return question.getTopic();
-        if (quiz.getTopic() != null && !quiz.getTopic().isBlank()) return quiz.getTopic();
-        return "综合知识";
+        if (question.getTopic() != null && !question.getTopic().isBlank()) {
+            return normalizeTopic(question.getTopic(), "综合知识");
+        }
+        return normalizeTopic(quiz.getTopic(), "综合知识");
+    }
+
+    private String normalizeTopic(String topic, String fallback) {
+        String value = topic == null || topic.isBlank() ? fallback : topic;
+        int codePointCount = value.codePointCount(0, value.length());
+        if (codePointCount <= MAX_TOPIC_LENGTH) return value;
+        return value.substring(0, value.offsetByCodePoints(0, MAX_TOPIC_LENGTH));
     }
 
     public record GradedAnswer(QuizQuestionEntity question, String userAnswerJson, boolean correct) {}

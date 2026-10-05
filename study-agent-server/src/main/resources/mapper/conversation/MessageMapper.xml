@@ -40,6 +40,19 @@
         WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND trace_id = #{traceId}
         LIMIT 1
     </select>
+    <select id="findByIdConversationAndOwner" resultType="com.studyagent.conversation.entity.MessageEntity">
+        SELECT id, conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message, create_time
+        FROM sa_message
+        WHERE id = #{id} AND conversation_id = #{conversationId} AND user_id = #{userId}
+        LIMIT 1
+    </select>
+    <select id="findRecentCompletedContext" resultType="com.studyagent.conversation.entity.MessageEntity">
+        SELECT id, conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message, create_time
+        FROM sa_message
+        WHERE conversation_id = #{conversationId} AND user_id = #{userId} AND id &lt; #{beforeId}
+          AND role IN ('user','assistant') AND status = 'COMPLETED'
+        ORDER BY id DESC LIMIT #{limit}
+    </select>
     <select id="findByIdAndOwner" resultType="com.studyagent.conversation.entity.MessageEntity">
         SELECT id, conversation_id, user_id, role, content, status, trace_id, finish_reason, error_message, create_time
         FROM sa_message
