@@ -4,6 +4,7 @@ import com.studyagent.common.result.Result;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -21,6 +22,12 @@ public class GlobalExceptionHandler {
                 .toList();
         return ResponseEntity.badRequest().body(new Result<>(ErrorCode.VALIDATION_FAILED.code(),
                 String.join("; ", details), details));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Result<Void>> handleUnreadableBody(HttpMessageNotReadableException exception) {
+        return ResponseEntity.badRequest().body(Result.failure(ErrorCode.VALIDATION_FAILED.code(),
+                "请求 JSON 格式不合法"));
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

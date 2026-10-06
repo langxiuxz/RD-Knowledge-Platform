@@ -89,6 +89,9 @@ CREATE DATABASE study_agent DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicod
 
 ### 2. 启动 FastAPI
 
+cd D:\StudyAgent\study-agent-ai
+.\.venv311\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
 ```powershell
 cd study-agent-ai
 python -m venv .venv311
@@ -102,6 +105,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 FastAPI 内部健康检查：`http://127.0.0.1:8000/internal/health`。它需要 `X-Internal-Token`。
 
 ### 3. 启动 Spring Boot
+
+IDEA打开server文件夹直接启动
 
 ```powershell
 cd study-agent-server
@@ -119,6 +124,9 @@ $env:FLYWAY_ENABLED="true"
 健康检查：`http://127.0.0.1:8080/api/health`。
 
 ### 4. 启动 Vue
+
+cd D:\StudyAgent\study-agent-web
+npm run dev
 
 ```powershell
 cd study-agent-web

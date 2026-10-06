@@ -89,7 +89,7 @@ public class QuizService {
         List<QuizQuestionEntity> questions = questionMapper.findByQuizIdAndUserId(id, userId);
         Map<Long, JsonNode> submitted = new LinkedHashMap<>();
         for (SubmitQuizRequest.Answer answer : request.answers()) {
-            if (submitted.put(answer.questionId(), answer.answer()) != null) {
+            if (submitted.put(answer.questionId(), objectMapper.valueToTree(answer.answer())) != null) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED, "questionId重复");
             }
         }
