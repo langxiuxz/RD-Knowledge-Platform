@@ -17,7 +17,7 @@ public record LearnerProfileToolVO(
                        List<String> focusTopics, int completedTasks, int taskCount) {}
     public record Topic(String topic, BigDecimal mastery, BigDecimal quizAccuracy,
                         int studyMinutes, int wrongCount, int quizQuestionCount) {}
-    public record LearningActivity(String type, String topic, int durationMinutes, LocalDateTime time) {}
+    public record LearningActivity(String type, String topic, int durationMinutes, LocalDateTime time, String remark) {}
     public record QuizTrend(String direction, BigDecimal recentAverage, BigDecimal previousAverage,
                             int recentQuizCount, int previousQuizCount) {}
 }

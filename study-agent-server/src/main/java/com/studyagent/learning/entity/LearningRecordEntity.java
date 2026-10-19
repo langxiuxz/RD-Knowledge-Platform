@@ -11,6 +11,10 @@ public class LearningRecordEntity {
     private Long sourceId;
     private String remark;
     private LocalDateTime createTime;
+    private String clientRecordId;
+
+    public String getClientRecordId() { return clientRecordId; }
+    public void setClientRecordId(String clientRecordId) { this.clientRecordId = clientRecordId; }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

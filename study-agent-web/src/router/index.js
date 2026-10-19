@@ -11,6 +11,7 @@ const routes = [
     { path: 'chat', component: () => import('../views/ChatView.vue') },
     { path: 'quizzes', component: () => import('../views/QuizView.vue') },
     { path: 'wrong-questions', component: () => import('../views/WrongQuestionsView.vue') },
+    { path: 'pomodoro', component: () => import('../views/PomodoroView.vue') },
     { path: 'learning', component: () => import('../views/LearningView.vue') },
     { path: 'study-plans', component: () => import('../views/StudyPlanView.vue') },
     { path: 'profile', component: () => import('../views/ProfileView.vue') }

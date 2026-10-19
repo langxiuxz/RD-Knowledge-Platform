@@ -1064,6 +1064,23 @@ FastAPI 不负责 Dashboard CRUD/统计。
 
 Agent 需要学习画像时，通过 Tool Bridge 获取 Spring Boot 已计算的数据。
 
+### 18.1 番茄钟与学习事实联动
+
+番茄钟不是独立的计时数据域。一个已完成的专注段通过现有 `POST /api/learning/records` 创建一条 `type=FOCUS` 的 `sa_learning_record`；计时器不直接写数据库，也不调用 FastAPI。主题累计由现有学习记录 Service 同步更新 `sa_topic_progress`。
+
+``` text
+Vue 番茄钟完成专注段
+  -> Spring Boot POST /api/learning/records (type=FOCUS)
+  -> sa_learning_record (原始学习事实)
+  -> sa_topic_progress (主题累计学习分钟)
+  -> Learning Records / Dashboard / Learner Profile
+  -> Agent get_learner_profile 只读分析
+```
+
+`FOCUS` 表示专注方式而非学习内容类型，因此可覆盖阅读、练习、复习或其他主题学习，也可用于执行任何现有类型的学习计划任务；不扩展 `sa_study_plan_task.type`。休息段和未完成段不计入学习记录。Dashboard 复用原有总时长与连续学习日统计；Agent 通过现有 Learner Profile 获得最近学习记录（当前最多 10 条，包含类型、主题、时长、完成时间和目标备注）及主题累计分钟，不新增 Tool、不将学习事实写入 Long-term Memory。初版记录只保留累计整数分钟，不承诺精确计时轨迹或服务端会话恢复；运行态由认证布局中的 composable 持有，使用截止时间计算剩余时长，暂停时冻结余额，刷新/后台/休眠后恢复时仅结算当前一轮。用户隔离的 localStorage 保存计时配置、当前轮、今日及近期完成轮次和待同步队列；可用时以 Web Locks 串行处理多标签页状态切换。每轮 UUID 通过 `clientRecordId` 上传，数据库用户级唯一索引保障重传不重复入库及累计。离线完成先落本地，再联网重试；`completedAt` 保留原完成日期。今日番茄统计按浏览器本地日期；Dashboard/Agent 时间按服务端时区，异地时区边界可能不同。学习计划页可带主题进入番茄钟，完成学习不自动勾选计划任务；分心清单仅在浏览器保存，不上传到 Agent。
+
+实现时必须同时更新 API 契约、数据库 check constraint 的向前迁移，以及 Spring Boot `LearningService` 对创建和查询类型的白名单校验。该准备阶段不新增计时会话接口、表或独立后端模块。
+
 ------------------------------------------------------------------------
 
 # 19. AI 学习计划生成架构

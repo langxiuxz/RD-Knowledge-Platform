@@ -2024,7 +2024,7 @@ AI 生成可能耗时，创建任务后返回 PROCESSING；完成后变为 READY
 | --- | --- |
 | 请求路径 | /api/learning/records |
 | 请求方式 | POST |
-| 接口描述 | 记录阅读、测验、复习、对话行为。 |
+| 接口描述 | 记录阅读、测验、复习、对话及专注计时行为。 |
 
 ### 5.1.2 请求参数
 
@@ -2032,22 +2032,32 @@ AI 生成可能耗时，创建任务后返回 PROCESSING；完成后变为 READY
 
 | 参数名 | 类型 | 是否必须 | 备注 |
 | --- | --- | --- | --- |
-| type | string | 是 | READ/QUIZ/REVIEW/CHAT |
+| type | string | 是 | READ/QUIZ/REVIEW/CHAT/FOCUS |
 | topic | string | 是 | 知识点 |
 | durationMinutes | number | 否 | 时长 |
 | sourceId | number | 否 | 关联资源 |
-| remark | string | 否 | 备注 |
+| remark | string | 否 | 备注，最多 500 字；专注记录保存本轮目标 |
+| clientRecordId | string | FOCUS 必须 | 小写 UUID；同一用户内唯一，重试时保持不变；其他类型不传 |
+| completedAt | string | FOCUS 必须 | 带时区的 ISO-8601 完成时间；其他类型不传 |
+
+`type` 仅允许 `READ`、`QUIZ`、`REVIEW`、`CHAT`、`FOCUS`。`FOCUS` 表示一段已完成的番茄钟专注学习，不绑定特定学习方式；阅读、做题、复习或其他活动均可使用。番茄钟休息段、取消或未完成的专注段不得作为 `FOCUS` 学习时长提交。每个完成的专注段创建一条记录，`topic` 使用该段学习主题，`durationMinutes` 使用实际累计专注分钟数；`sourceId` 必须为空（当前通过主题与现有功能联动，不复用多态资源 ID 表示计划任务）。时长取累计专注的完整分钟（1～1440），暂停与休息不计入；不足 1 分钟不可提前完成。提前完成也记为一轮。此记录继续参与学习记录查询、主题学习分钟统计、Dashboard 学习时长/连续学习天数及 Agent 学习画像。
+
+本契约仅定义完成后的学习事实写入，不定义计时会话 API、服务端运行态或暂停/恢复状态持久化。前端以每轮固定的 `clientRecordId` 提交，服务端使用 `(user_id, client_record_id)` 唯一约束，并在同一事务中写学习事实和主题累计。相同编号及相同字段重试返回原记录 ID，不重复累计；同一编号携带不同字段返回 `VALIDATION_FAILED`。不同用户的编号互不影响。`completedAt` 不得晚于服务端当前时间 1 分钟；换算成服务端时区后，按秒存入 `create_time`，离线补传仍归属原完成日期。客户端时间属于用户填报数据，不作为防作弊依据。
 
 请求参数样例：
 
 ```text
 {
-  "type": "REVIEW",
+  "type": "FOCUS",
   "topic": "MyBatis动态SQL",
-  "durationMinutes": 45,
-  "remark": "复习if/where/foreach"
+  "durationMinutes": 25,
+  "remark": "完成 MyBatis 动态 SQL 练习",
+  "clientRecordId": "d86efc94-2975-4b88-a756-0b4c35c850a6",
+  "completedAt": "2026-10-19T10:50:00+08:00"
 }
 ```
+
+`FOCUS` 仅是学习记录的行为类型，不改变学习计划任务的 `READ/QUIZ/REVIEW/CHAT` 类型；番茄钟可用于执行任意类型的计划任务。
 
 ### 5.1.3 响应数据
 
@@ -2090,7 +2100,7 @@ AI 生成可能耗时，创建任务后返回 PROCESSING；完成后变为 READY
 | --- | --- | --- | --- |
 | begin | string | 否 | 开始日期 |
 | end | string | 否 | 结束日期 |
-| type | string | 否 | 类型 |
+| type | string | 否 | 类型：READ/QUIZ/REVIEW/CHAT/FOCUS |
 | topic | string | 否 | 知识点 |
 | page | number | 是 | 页码 |
 | pageSize | number | 是 | 每页条数 |
@@ -2128,9 +2138,9 @@ AI 生成可能耗时，创建任务后返回 PROCESSING；完成后变为 READY
     "rows": [
       {
         "id": 1001,
-        "type": "REVIEW",
+        "type": "FOCUS",
         "topic": "MyBatis动态SQL",
-        "durationMinutes": 45
+        "durationMinutes": 25
       }
     ]
   }
@@ -3289,7 +3299,7 @@ data: {"traceId":"trace_93aa","finishReason":"stop"}
 }
 ```
 
-`userId` 必须大于 0，`limit` 取值 1～20。响应使用统一 `Result<T>`；只读查询只返回当前 `userId` 的数据，不提供任意 SQL、任意 HTTP 或业务事实写操作能力。`learner-profile` 汇总真实进度、最近学习记录、ACTIVE/READY 计划和已完成测验；Profile 不持久化、不写回 mastery。
+`userId` 必须大于 0，`limit` 取值 1～20。响应使用统一 `Result<T>`；只读查询只返回当前 `userId` 的数据，不提供任意 SQL、任意 HTTP 或业务事实写操作能力。`learner-profile` 汇总真实进度、最近学习记录、ACTIVE/READY 计划和已完成测验；`FOCUS` 记录作为普通学习事实出现在最近学习记录中，主题累计时长通过学习进度提供。`recentLearning` 每项包含 `type`、`topic`、`durationMinutes`、`time` 和可空 `remark`；FOCUS 的 `remark` 为本轮学习目标，帮助 Agent 结合目标与投入时长分析。Profile 不持久化、不写回 mastery。
 
 记忆 Bridge 仅供内部服务：`memories/query` 请求 `{userId, query, limit}`，limit 最大 20；`memories/candidates` 请求 `{userId, conversationId, messageId, category, memoryKey, value, evidenceText}`。候选必须可由指定用户消息原文验证，且类别仅限学习目标、解释偏好、学习方式偏好；业务学习事实不允许写入 Memory。相同 user/category/key 使用 upsert 覆盖旧偏好。所有 memory 查询均按 userId 隔离。
 

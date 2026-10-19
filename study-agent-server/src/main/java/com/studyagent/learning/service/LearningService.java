@@ -11,13 +11,17 @@ import com.studyagent.learning.mapper.TopicProgressMapper;
 import com.studyagent.learning.vo.LearningVOs;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
 public class LearningService {
-    private static final Set<String> TYPES = Set.of("READ", "QUIZ", "REVIEW", "CHAT");
+    private static final Set<String> TYPES = Set.of("READ", "QUIZ", "REVIEW", "CHAT", "FOCUS");
     private static final Set<String> RANGES = Set.of("7d", "30d", "all");
     private final LearningRecordMapper recordMapper;
     private final TopicProgressMapper progressMapper;
@@ -30,6 +34,17 @@ public class LearningService {
     @Transactional
     public LearningVOs.Id create(Long userId, CreateLearningRecordRequest request) {
         validateType(request.type());
+        boolean focus = "FOCUS".equals(request.type());
+        if (focus && (request.clientRecordId() == null || request.completedAt() == null
+                || request.durationMinutes() == null || request.durationMinutes() < 1 || request.sourceId() != null)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "专注记录需要编号、完成时间和至少1分钟时长，sourceId须为空");
+        }
+        if (!focus && (request.clientRecordId() != null || request.completedAt() != null)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "编号和完成时间仅用于专注记录");
+        }
+        if (request.completedAt() != null && request.completedAt().isAfter(OffsetDateTime.now().plusMinutes(1))) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "完成时间不能在未来");
+        }
         LearningRecordEntity entity = new LearningRecordEntity();
         entity.setUserId(userId);
         entity.setType(request.type());
@@ -37,7 +52,25 @@ public class LearningService {
         entity.setDurationMinutes(request.durationMinutes() == null ? 0 : request.durationMinutes());
         entity.setSourceId(request.sourceId());
         entity.setRemark(request.remark());
-        recordMapper.insert(entity);
+        entity.setClientRecordId(request.clientRecordId());
+        if (focus) entity.setCreateTime(request.completedAt().atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime().withNano(0));
+        try {
+            recordMapper.insert(entity);
+        } catch (DuplicateKeyException duplicate) {
+            if (request.clientRecordId() == null) throw duplicate;
+            // A locking read sees the committed winner even under MySQL REPEATABLE READ.
+            LearningRecordEntity existing = recordMapper.findByClientRecordId(userId, request.clientRecordId());
+            if (existing == null) throw duplicate;
+            if (!Objects.equals(existing.getType(), entity.getType())
+                    || !Objects.equals(existing.getTopic(), entity.getTopic())
+                    || !Objects.equals(existing.getDurationMinutes(), entity.getDurationMinutes())
+                    || !Objects.equals(existing.getSourceId(), entity.getSourceId())
+                    || !Objects.equals(existing.getRemark(), entity.getRemark())
+                    || !Objects.equals(existing.getCreateTime(), entity.getCreateTime())) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED, "同一专注编号不能用于不同记录");
+            }
+            return new LearningVOs.Id(existing.getId());
+        }
         progressMapper.addStudyMinutes(userId, request.topic(), entity.getDurationMinutes());
         return new LearningVOs.Id(entity.getId());
     }
@@ -67,6 +100,6 @@ public class LearningService {
     }
 
     private void validateType(String type) {
-        if (!TYPES.contains(type)) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "type不合法");
+        if (type == null || !TYPES.contains(type)) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "type不合法");
     }
 }

@@ -1,6 +1,8 @@
 package com.studyagent.internal;
 
 import com.studyagent.internal.entity.ToolDataRow;
+import com.studyagent.learning.entity.LearningRecordEntity;
+import java.time.LocalDateTime;
 import com.studyagent.internal.mapper.ToolDataMapper;
 import com.studyagent.internal.service.InternalToolService;
 import com.studyagent.internal.vo.LearnerProfileToolVO;
@@ -49,7 +51,29 @@ class InternalToolServiceTest {
         assertThat(profile.hasData()).isTrue();
         assertThat(profile.weakPoints()).extracting(LearnerProfileToolVO.Topic::topic).contains("Spring");
         assertThat(profile.topics()).extracting(LearnerProfileToolVO.Topic::mastery)
+                .usingElementComparator(BigDecimal::compareTo)
                 .contains(BigDecimal.valueOf(45), BigDecimal.valueOf(82));
+    }
+
+    @Test
+    void learnerProfileIncludesFocusFactAndGoalWithoutInventingMastery() {
+        var record = new LearningRecordEntity();
+        record.setType("FOCUS");
+        record.setTopic("Java");
+        record.setDurationMinutes(50);
+        record.setRemark("Read streams");
+        record.setCreateTime(LocalDateTime.of(2026, 10, 18, 10, 50));
+        when(mapper.findLearningProgress(7L, 50)).thenReturn(List.of());
+        when(mapper.findRecentQuizResults(7L, 10)).thenReturn(List.of());
+        when(mapper.findRecentLearningForProfile(7L, 10)).thenReturn(List.of(record));
+        when(mapper.findActivePlansForProfile(7L, 5)).thenReturn(List.of());
+
+        var profile = service.learnerProfile(7L);
+
+        assertThat(profile.hasData()).isTrue();
+        assertThat(profile.topics()).isEmpty();
+        assertThat(profile.recentLearning()).containsExactly(new LearnerProfileToolVO.LearningActivity(
+                "FOCUS", "Java", 50, record.getCreateTime(), "Read streams"));
     }
 
     private ToolDataRow row(String topic, String mastery, int wrongCount) {

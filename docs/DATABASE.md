@@ -596,11 +596,12 @@ READY/COMPLETED。
   ------------------ ----------------- ------ ------------------- -----------------------
   id                 BIGINT UNSIGNED   否     AUTO_INCREMENT      记录ID
   user_id            BIGINT UNSIGNED   否     \-                  用户ID
-  type               VARCHAR(16)       否     \-                  READ/QUIZ/REVIEW/CHAT
+  type               VARCHAR(16)       否     \-                  READ/QUIZ/REVIEW/CHAT/FOCUS
   topic              VARCHAR(128)      否     \-                  知识点
   duration_minutes   INT UNSIGNED      否     0                   学习分钟数
   source_id          BIGINT UNSIGNED   是     NULL                关联资源ID
   remark             VARCHAR(500)      是     NULL                备注
+  client_record_id   VARCHAR(36)       是     NULL                专注段客户端UUID（幂等键）
   create_time        DATETIME          否     CURRENT_TIMESTAMP   行为发生时间
 
 说明：
@@ -608,10 +609,17 @@ READY/COMPLETED。
 -   `source_id` 是 API 已定义的多态资源ID，不建立数据库外键。
 -   `type=QUIZ` 时可指向 quiz；READ 可指向 document；CHAT 可指向
     conversation。
+-   `type=FOCUS` 表示已完成的番茄钟专注段，覆盖任意学习活动，不与 READ/REVIEW 等学习方式绑定；休息、取消和未完成段不写入学习时长。
+-   每个已完成专注段写一条记录；`topic` 保存用户选择的学习主题，`duration_minutes` 保存实际累计专注分钟数。`remark` 保存本轮目标；`create_time` 对 FOCUS 保存客户端完成时间（转为服务端时区、秒精度），延迟同步不会变成上传日期。当前模型不保存开始时间、暂停明细或番茄钟配置。
+-   `FOCUS` 只属于学习记录行为类型，不扩展 `sa_study_plan_task.type`；番茄钟可用于执行任意现有类型的学习计划任务。
 -   Dashboard 的学习时长和连续学习天数以本表为主要事实来源。
+-   Agent Learner Profile 的最近学习行为读取本表，按主题累计时长来自 `sa_topic_progress`；番茄钟数据因此进入既有分析链路，不另建 Agent 专用副本。
+
+迁移 `V3__focus_learning_records.sql` 放宽 `chk_learning_type`，并增加可空 `client_record_id` 和唯一索引 `uk_learning_user_client (user_id, client_record_id)`，用于解决离线重传和多标签页同时同步时的重复累计。旧记录与其他类型保留 NULL，可继续正常插入；历史 V1/V2 迁移不修改。部署新服务前执行 V3（本项目 Flyway 默认关闭，需显式启用迁移或用数据库迁移流程执行）。应用层创建及查询类型白名单同步包含 FOCUS。
 
 索引：
 
+-   UNIQUE `(user_id, client_record_id)`；NULL 不相互冲突
 -   `(user_id, create_time)`
 -   `(user_id, type, create_time)`
 -   `(user_id, topic, create_time)`
@@ -1242,12 +1250,14 @@ CREATE TABLE sa_learning_record (
     duration_minutes INT UNSIGNED NOT NULL DEFAULT 0,
     source_id BIGINT UNSIGNED NULL,
     remark VARCHAR(500) NULL,
+    client_record_id VARCHAR(36) NULL,
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    UNIQUE KEY uk_learning_user_client (user_id, client_record_id),
     KEY idx_learning_user_time (user_id, create_time),
     KEY idx_learning_user_type_time (user_id, type, create_time),
     KEY idx_learning_user_topic_time (user_id, topic, create_time),
-    CONSTRAINT chk_learning_type CHECK (type IN ('READ','QUIZ','REVIEW','CHAT')),
+    CONSTRAINT chk_learning_type CHECK (type IN ('READ','QUIZ','REVIEW','CHAT','FOCUS')),
     CONSTRAINT fk_learning_user
         FOREIGN KEY (user_id) REFERENCES sa_user(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

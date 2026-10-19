@@ -45,7 +45,7 @@ public class InternalToolService {
                 .limit(3).map(this::topic).toList();
         List<LearnerProfileToolVO.LearningActivity> activities = records.stream().map(record ->
                 new LearnerProfileToolVO.LearningActivity(record.getType(), record.getTopic(),
-                        zero(record.getDurationMinutes()), record.getCreateTime())).toList();
+                        zero(record.getDurationMinutes()), record.getCreateTime(), record.getRemark())).toList();
         List<LearnerProfileToolVO.Goal> goals = plans.stream().map(plan -> new LearnerProfileToolVO.Goal(
                 plan.getTitle(), plan.getGoal(), plan.getStartDate(), plan.getEndDate(),
                 parseTopics(plan.getFocusTopicsJson()), zero(plan.getCompletedTaskCount()),
