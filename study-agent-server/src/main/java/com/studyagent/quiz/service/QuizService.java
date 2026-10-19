@@ -18,6 +18,7 @@ import com.studyagent.quiz.mapper.QuizAnswerMapper;
 import com.studyagent.quiz.mapper.QuizMapper;
 import com.studyagent.quiz.mapper.QuizQuestionMapper;
 import com.studyagent.quiz.vo.QuizVOs;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -56,7 +57,11 @@ public class QuizService {
         validateGenerate(request);
         if (request.knowledgeBaseId() != null) knowledgeBaseService.requireOwned(userId, request.knowledgeBaseId());
         QuizEntity quiz = generationPersistence.create(userId, request);
-        generationWorker.generate(userId, quiz.getId(), request);
+        try {
+            generationWorker.generate(userId, quiz.getId(), request);
+        } catch (TaskRejectedException exception) {
+            generationPersistence.fail(userId, quiz.getId(), "AI任务队列已满，请稍后重新生成");
+        }
         return new QuizVOs.Generate(quiz.getId(), "PROCESSING");
     }
 

@@ -61,7 +61,9 @@ public class QuizGenerationPersistenceService {
             question.setSortOrder(index++);
             questionMapper.insert(question);
         }
-        quizMapper.markReady(quizId, userId);
+        if (quizMapper.markReady(quizId, userId) == 0) {
+            throw new BusinessException(ErrorCode.QUIZ_GENERATION_FAILED, "测验状态已变化");
+        }
     }
 
     @Transactional

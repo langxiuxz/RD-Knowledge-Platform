@@ -6,6 +6,7 @@ import com.studyagent.ai.client.AiClient;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.exception.ErrorCode;
 import com.studyagent.knowledge.service.KnowledgeBaseService;
+import com.studyagent.quiz.dto.GenerateQuizRequest;
 import com.studyagent.quiz.dto.SubmitQuizRequest;
 import com.studyagent.quiz.entity.QuizEntity;
 import com.studyagent.quiz.entity.QuizQuestionEntity;
@@ -16,15 +17,15 @@ import com.studyagent.quiz.service.QuizGenerationPersistenceService;
 import com.studyagent.quiz.service.QuizGenerationWorker;
 import com.studyagent.quiz.service.QuizService;
 import com.studyagent.quiz.service.QuizSubmissionPersistenceService;
+import java.math.BigDecimal;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.math.BigDecimal;
-import java.util.List;
+import org.springframework.core.task.TaskRejectedException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -102,6 +103,32 @@ class QuizServiceTest {
                 .extracting(error -> ((BusinessException) error).errorCode())
                 .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
         verify(questionMapper, never()).findByQuizIdAndUserId(anyLong(), anyLong());
+    }
+
+    @Test
+    void generate_whenExecutorRejects_shouldPersistFailureForPolling() {
+        var request = new GenerateQuizRequest("Java", "Java", null, 1, "EASY", List.of("JUDGE"));
+        QuizEntity quiz = new QuizEntity();
+        quiz.setId(50L);
+        when(generationPersistence.create(1L, request)).thenReturn(quiz);
+        doThrow(new TaskRejectedException("full")).when(generationWorker).generate(1L, 50L, request);
+
+        assertThat(service.generate(1L, request).quizId()).isEqualTo(50L);
+
+        verify(generationPersistence).fail(eq(1L), eq(50L), contains("队列已满"));
+    }
+
+    @Test
+    void complete_whenTimeoutAlreadyWon_shouldIgnoreLateResponse() {
+        QuizEntity quiz = readyQuiz();
+        quiz.setStatus("FAILED");
+        when(quizMapper.findByIdAndUserId(50L, 1L)).thenReturn(quiz);
+        var persistence = new QuizGenerationPersistenceService(quizMapper, questionMapper, objectMapper);
+
+        persistence.complete(1L, 50L, null);
+
+        verifyNoInteractions(questionMapper);
+        verify(quizMapper, never()).markReady(anyLong(), anyLong());
     }
 
     private QuizEntity readyQuiz() {

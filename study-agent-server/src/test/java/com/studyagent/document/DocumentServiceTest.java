@@ -44,21 +44,21 @@ class DocumentServiceTest {
     @Test
     void progress_shouldIgnoreOldTaskAndAcceptDuplicateCurrentCallback() {
         DocumentEntity entity = document("task-current", "EMBEDDING", 60);
-        when(mapper.findById(101L)).thenReturn(entity);
+        when(mapper.findByIdForUpdate(101L)).thenReturn(entity);
         when(mapper.updateProgressIfCurrentTask(101L, "task-current", "READY", 100, 3, null, true)).thenReturn(1);
 
         service.progress(101L, new DocumentProgressRequest("task-old", "READY", 100, 3, null));
         service.progress(101L, new DocumentProgressRequest("task-current", "READY", 100, 3, null));
         service.progress(101L, new DocumentProgressRequest("task-current", "READY", 100, 3, null));
 
-        verify(mapper, times(3)).findById(101L);
+        verify(mapper, times(3)).findByIdForUpdate(101L);
         verify(mapper, times(2)).updateProgressIfCurrentTask(101L, "task-current", "READY", 100, 3, null, true);
     }
 
     @Test
     void progress_shouldRejectProgressRegression() {
         DocumentEntity entity = document("task-current", "EMBEDDING", 60);
-        when(mapper.findById(101L)).thenReturn(entity);
+        when(mapper.findByIdForUpdate(101L)).thenReturn(entity);
 
         assertThatThrownBy(() -> service.progress(101L,
                 new DocumentProgressRequest("task-current", "EMBEDDING", 30, 2, null)))
@@ -90,6 +90,24 @@ class DocumentServiceTest {
                 .extracting(e -> ((BusinessException) e).errorCode())
                 .isEqualTo(ErrorCode.FILE_INVALID);
         verify(fileStorageService, never()).store(any());
+    }
+
+    @Test
+    void progress_whenAlreadyTerminal_shouldIgnoreLateResultAndDuplicateFailure() {
+        for (String terminal : new String[]{"READY", "FAILED"}) {
+            when(mapper.findByIdForUpdate(101L)).thenReturn(document("task-current", terminal, 60));
+            service.progress(101L, new DocumentProgressRequest("task-current", "READY", 100, 3, null));
+            service.progress(101L, new DocumentProgressRequest("task-current", "FAILED", 0, null, "late failure"));
+        }
+        verify(mapper, never()).updateProgressIfCurrentTask(anyLong(), anyString(), anyString(), anyInt(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void reprocess_whenConcurrentRequestAlreadyClaimedTask_shouldNotDispatchAgain() {
+        when(mapper.findByIdAndUserId(101L, 1L)).thenReturn(document("old", "FAILED", 0));
+        when(mapper.updateTaskStart(any())).thenReturn(0);
+        assertThatThrownBy(() -> service.reprocess(1L, 101L)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(aiClient);
     }
 
     private DocumentEntity document(String taskId, String status, int progress) {

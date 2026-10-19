@@ -12,6 +12,9 @@
   <select id="findById" resultType="com.studyagent.document.entity.DocumentEntity">
     <include refid="baseSelect"/> WHERE id=#{id}
   </select>
+  <select id="findByIdForUpdate" resultType="com.studyagent.document.entity.DocumentEntity">
+    <include refid="baseSelect"/> WHERE id=#{id} FOR UPDATE
+  </select>
   <select id="countByKnowledgeBaseAndUserId" resultType="long">
     SELECT COUNT(*) FROM sa_document WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
     <if test="fileName != null and fileName != ''">AND file_name LIKE CONCAT('%',#{fileName},'%')</if>
@@ -25,17 +28,24 @@
   </select>
   <update id="updateTaskStart">
     UPDATE sa_document SET status=#{status},progress=#{progress},chunk_count=#{chunkCount},current_task_id=#{currentTaskId},error_message=NULL,processed_at=NULL
-    WHERE id=#{id} AND user_id=#{userId}
+    WHERE id=#{id} AND user_id=#{userId} AND status='FAILED'
   </update>
   <update id="updateProgressIfCurrentTask">
     UPDATE sa_document SET status=#{status}, progress=#{progress},
       chunk_count=COALESCE(#{chunkCount},chunk_count), error_message=#{errorMessage},
       processed_at=CASE WHEN #{ready}=true THEN CURRENT_TIMESTAMP ELSE processed_at END
     WHERE id=#{id} AND current_task_id=#{taskId}
+      AND status IN ('UPLOADED','PARSING','CHUNKING','EMBEDDING')
   </update>
   <select id="findStorageKeysByKnowledgeBaseAndUser" resultType="string">
     SELECT storage_key FROM sa_document WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
   </select>
   <select id="existsByStorageKey" resultType="boolean">SELECT EXISTS(SELECT 1 FROM sa_document WHERE storage_key=#{storageKey})</select>
   <delete id="deleteByIdAndUserId">DELETE FROM sa_document WHERE id=#{id} AND user_id=#{userId}</delete>
+  <update id="failStaleTasks">
+      UPDATE sa_document SET status = 'FAILED', error_message = #{errorMessage}
+      WHERE status IN ('UPLOADED','PARSING','CHUNKING','EMBEDDING')
+        AND update_time &lt; TIMESTAMPADD(SECOND, -#{timeoutSeconds}, CURRENT_TIMESTAMP)
+      ORDER BY update_time, id LIMIT #{batchSize}
+  </update>
 </mapper>

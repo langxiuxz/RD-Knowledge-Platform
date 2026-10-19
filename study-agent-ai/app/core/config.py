@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     spring_boot_base_url: str = "http://localhost:8080"
     spring_boot_connect_timeout: float = Field(default=2.0, gt=0)
     spring_boot_read_timeout: float = Field(default=30.0, gt=0)
+    document_callback_attempts: int = Field(default=3, ge=1, le=5)
+    document_callback_retry_delay: float = Field(default=0.25, gt=0, le=5)
     # Supported remote providers: deepseek, openai, openai-compatible.
     # Keep local startup independent from external API credentials.
     llm_provider: str = "none"

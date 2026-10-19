@@ -9,6 +9,8 @@ import java.util.List;
 
 @Mapper
 public interface QuizMapper {
+    int failStaleTasks(@Param("timeoutSeconds") long timeoutSeconds, @Param("batchSize") int batchSize,
+                       @Param("errorMessage") String errorMessage);
     int insert(QuizEntity entity);
     QuizEntity findByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
     long countByUserId(@Param("userId") Long userId, @Param("keyword") String keyword, @Param("status") String status);

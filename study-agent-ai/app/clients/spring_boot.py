@@ -1,6 +1,12 @@
+import asyncio
+import logging
+
 from typing import Any, Dict, Optional
 import httpx
 from app.core.config import Settings
+
+logger = logging.getLogger(__name__)
+
 
 class SpringBootClient:
     def __init__(self, settings: Settings) -> None:
@@ -22,7 +28,23 @@ class SpringBootClient:
                                 chunk_count: Optional[int] = None, error_message: Optional[str] = None) -> None:
         payload = {"taskId": task_id, "status": status, "progress": progress,
                    "chunkCount": chunk_count, "errorMessage": error_message}
-        await self._request_json("POST", f"/internal/callbacks/documents/{document_id}/progress", payload)
+        for attempt in range(1, self._settings.document_callback_attempts + 1):
+            try:
+                envelope = await self._request_json(
+                    "POST", f"/internal/callbacks/documents/{document_id}/progress", payload)
+                if envelope.get("code") != 1:
+                    raise ValueError("Document progress callback was not acknowledged")
+                return
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                # Authentication, missing resources and invalid transitions need intervention,
+                # not repeated delivery. Only temporary transport/server failures are retried.
+                retryable = isinstance(exc, httpx.TransportError) or (
+                    exc.response.status_code in (408, 429) or exc.response.status_code >= 500)
+                if not retryable or attempt == self._settings.document_callback_attempts:
+                    raise
+                logger.warning("Retrying document callback document_id=%s task_id=%s status=%s attempt=%s",
+                               document_id, task_id, status, attempt)
+                await asyncio.sleep(min(self._settings.document_callback_retry_delay * 2 ** (attempt - 1), 5.0))
 
     async def get_learner_profile(self, user_id: int) -> Any:
         envelope = await self._request_json("POST", "/internal/tools/learner-profile", {"userId": user_id, "limit": 1})

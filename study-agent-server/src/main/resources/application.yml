@@ -48,6 +48,12 @@ app:
     base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
     connect-timeout: ${AI_CONNECT_TIMEOUT:2s}
     read-timeout: ${AI_READ_TIMEOUT:30s}
+  task-recovery:
+    enabled: ${TASK_RECOVERY_ENABLED:true}
+    scan-interval: ${TASK_RECOVERY_SCAN_INTERVAL:30s}
+    document-timeout: ${TASK_RECOVERY_DOCUMENT_TIMEOUT:15m}
+    generation-timeout: ${TASK_RECOVERY_GENERATION_TIMEOUT:5m}
+    batch-size: ${TASK_RECOVERY_BATCH_SIZE:100}
   generation:
     ttl: ${GENERATION_STATE_TTL:10m}
   internal:

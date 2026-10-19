@@ -59,4 +59,10 @@
     <delete id="deleteByIdAndUserId">
         DELETE FROM sa_study_plan WHERE id = #{id} AND user_id = #{userId}
     </delete>
+    <update id="failStaleTasks">
+        UPDATE sa_study_plan SET generation_status = 'FAILED', error_message = #{errorMessage}
+        WHERE generation_status IN ('PROCESSING')
+          AND update_time &lt; TIMESTAMPADD(SECOND, -#{timeoutSeconds}, CURRENT_TIMESTAMP)
+        ORDER BY update_time, id LIMIT #{batchSize}
+    </update>
 </mapper>

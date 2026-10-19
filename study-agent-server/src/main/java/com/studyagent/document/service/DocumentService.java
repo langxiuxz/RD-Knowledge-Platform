@@ -79,7 +79,7 @@ public class DocumentService {
         DocumentEntity entity = requireOwned(userId, documentId);
         if (!"FAILED".equals(entity.getStatus())) throw new BusinessException(ErrorCode.DOCUMENT_PROCESSING);
         entity.setCurrentTaskId(newTaskId()); entity.setStatus("UPLOADED"); entity.setProgress(0); entity.setChunkCount(0);
-        mapper.updateTaskStart(entity);
+        if (mapper.updateTaskStart(entity) == 0) throw new BusinessException(ErrorCode.DOCUMENT_PROCESSING);
         dispatch(entity);
         return new DocumentTaskVO(entity.getCurrentTaskId(), "PROCESSING");
     }
@@ -96,9 +96,10 @@ public class DocumentService {
 
     @Transactional
     public void progress(Long documentId, DocumentProgressRequest request) {
-        DocumentEntity current = mapper.findById(documentId);
+        DocumentEntity current = mapper.findByIdForUpdate(documentId);
         if (current == null) throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
         if (!request.taskId().equals(current.getCurrentTaskId())) return;
+        if ("READY".equals(current.getStatus()) || "FAILED".equals(current.getStatus())) return;
         validateProgress(current.getStatus(), current.getProgress(), request.status(), request.progress(), request.errorMessage());
         boolean ready = "READY".equals(request.status());
         int updated = mapper.updateProgressIfCurrentTask(documentId, request.taskId(), request.status(), request.progress(),

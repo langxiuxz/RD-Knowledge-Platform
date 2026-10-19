@@ -7,9 +7,12 @@ import java.util.List;
 
 @Mapper
 public interface DocumentMapper {
+    int failStaleTasks(@Param("timeoutSeconds") long timeoutSeconds, @Param("batchSize") int batchSize,
+                       @Param("errorMessage") String errorMessage);
     int insert(DocumentEntity entity);
     DocumentEntity findByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
     DocumentEntity findById(@Param("id") Long id);
+    DocumentEntity findByIdForUpdate(@Param("id") Long id);
     long countByKnowledgeBaseAndUserId(@Param("knowledgeBaseId") Long knowledgeBaseId, @Param("userId") Long userId,
                                         @Param("fileName") String fileName, @Param("status") String status);
     List<DocumentEntity> findPageByKnowledgeBaseAndUserId(@Param("knowledgeBaseId") Long knowledgeBaseId, @Param("userId") Long userId,

@@ -9,6 +9,7 @@ import com.studyagent.plan.entity.StudyPlanEntity;
 import com.studyagent.plan.mapper.StudyPlanMapper;
 import com.studyagent.plan.mapper.StudyPlanTaskMapper;
 import com.studyagent.plan.vo.StudyPlanVOs;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +38,11 @@ public class StudyPlanService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED, "endDate不能早于startDate");
         }
         StudyPlanEntity plan = persistenceService.create(userId, request);
-        generationWorker.generate(userId, plan.getId(), request);
+        try {
+            generationWorker.generate(userId, plan.getId(), request);
+        } catch (TaskRejectedException exception) {
+            persistenceService.fail(userId, plan.getId(), "AI任务队列已满，请稍后重新生成");
+        }
         return new StudyPlanVOs.Generate(plan.getId(), "PROCESSING");
     }
 

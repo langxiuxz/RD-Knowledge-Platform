@@ -51,4 +51,10 @@
             wrong_count = #{wrongCount}, analysis = #{analysis}, submitted_at = CURRENT_TIMESTAMP
         WHERE id = #{id} AND user_id = #{userId} AND status = 'READY'
     </update>
+    <update id="failStaleTasks">
+        UPDATE sa_quiz SET status = 'FAILED', error_message = #{errorMessage}
+        WHERE status IN ('PROCESSING')
+          AND update_time &lt; TIMESTAMPADD(SECOND, -#{timeoutSeconds}, CURRENT_TIMESTAMP)
+        ORDER BY update_time, id LIMIT #{batchSize}
+    </update>
 </mapper>

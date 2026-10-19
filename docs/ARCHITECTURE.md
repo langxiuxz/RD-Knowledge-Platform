@@ -2122,3 +2122,36 @@ Learner Profile 由 Spring Boot Tool Bridge 在请求时从 `sa_topic_progress`�
 Long-term Memory 是独立的有限偏好/目标存储，不复制 mastery、错题、测验或学习记录。FastAPI context builder 只识别显式、稳定的候选，Spring Boot 再核验用户消息归属、原文证据、类别白名单并按 `(user_id, category, memory_key)` upsert。查询按当前 userId 获取有限候选后按当前问题筛选。
 
 每次请求组合有界的 recent completed messages（最多 8 条、单条最多 2000 字符）、最多 5 条相关 Memory 和按需调用的 Learner Profile/其他 Tool Results。System Prompt 分开约束 Business Facts、Learner Profile、Long-term Memory 与 Conversation；Memory 不得用于推断真实学习状态。候选写入/记忆读取失败采用 fail-soft，不阻断原 CHAT/RAG/AGENT/SSE。
+
+## 异步任务中断恢复（增量）
+
+三类异步任务继续使用现有 `BackgroundTasks` / `@Async` 执行，新增 Spring Boot
+`TaskRecoveryService` + `TaskRecoveryScheduler` 负责恢复持久化业务状态。启动完成后立即检查一次，
+此后默认每 30 秒检查一次。扫描仅将超过阈值且仍在执行态的记录原子更新为 FAILED，并写入错误原因。
+
+- 文档：`UPLOADED/PARSING/CHUNKING/EMBEDDING`，默认 `update_time` 超过 15 分钟没有推进。
+- 测验：`PROCESSING`，默认 `update_time` 超过 5 分钟。
+- 学习计划：`generation_status=PROCESSING`，默认 `update_time` 超过 5 分钟；业务 `status` 不变。
+- 每类每轮最多 100 条，按 `update_time,id` 排序；后续轮次继续处理积压。使用数据库时间比较。
+- 三类扫描独立执行；单类数据库异常记录日志，下一轮重试，不阻断另外两类。
+- 不在启动时直接失败所有执行态任务，保留其他实例或尚在运行任务的正常时间窗口。
+
+此版本恢复的是可终止、可重新发起的业务状态，不是持久任务队列、自动续跑或断点续传。
+在阈值以内重启不会立刻失败；无积压时，在超过阈值后的下一次扫描收敛。正常任务也受超时上限约束，
+需根据文件大小、模型延迟和线程池排队时间调大阈值。文档使用现有 reprocess 接口重试并产生新 taskId；
+测验和计划使用现有生成入口创建新记录，不对原记录增加重试接口，也不自动重复产生 LLM 费用。
+
+并发保护：文档回调在短数据库事务中锁定当前记录，校验 taskId、合法状态迁移和单调进度；
+READY/FAILED 终态保持不变。SQL 再次限制执行态，防止超时扫描与迟到回调互相覆盖。
+文档重处理用 `WHERE status='FAILED'` 原子领取，竞争失败者不派发任务。
+测验和计划完成时，仅当 `PROCESSING -> READY` 更新成功才提交子记录，否则整个事务回滚。
+异步线程池拒绝请求时立即标记 FAILED。
+
+FastAPI 文档进度回调默认最多总投递 3 次；连接/读取异常和 HTTP 408/429/5xx 按 0.25、0.5 秒退避重试，
+其他 4xx 不重试。成功需 HTTP 成功且业务 code=1；同一回调重试保留 taskId 和原始请求体。
+所有回调均失败时不保存内存重试队列，最终由 Spring Boot 的超时扫描收敛。
+
+边界：该版本不主动停止已超时的 Python 计算，不保证向量副作用只执行一次；迟到结果不能恢复 MySQL
+业务终态，但仍可能存在待后续重处理清理的向量。因此它不解决执行中的文档删除、旧新 Worker 重叠写入的
+完整外部一致性问题。后续若需自动重投递、租约、持久重试次数和向量写入 fencing，应先修订契约再升级。
+配置与演练见 `docs/ASYNC_RECOVERY.md`。
