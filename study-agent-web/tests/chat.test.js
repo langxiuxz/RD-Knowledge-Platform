@@ -22,6 +22,7 @@ const response = data => ({ data: { data } })
 async function setup() {
   const requests = [], stops = [], notices = []
   let history = []
+  let loadHistory = async () => response({ rows: history })
   const context = vm.createContext({
     ...Vue, AbortController, onMounted: () => {},
     streamConversation: (id, payload, options) => new Promise((resolve, reject) => {
@@ -33,7 +34,7 @@ async function setup() {
       }, { once: true })
     }),
     stopGeneration: async (id, traceId) => { stops.push({ id, traceId }) },
-    conversationApi: { listMessages: async () => response({ rows: history }) },
+    conversationApi: { listMessages: (...args) => loadHistory(...args) },
     feedbackMessage: async () => {},
     ElMessage: Object.fromEntries(['error', 'warning', 'success', 'info'].map(type => [
       type, message => notices.push({ type, message })
@@ -63,7 +64,7 @@ async function setup() {
     }
     return renderToString(app)
   }
-  return { run, stream, requests, stops, notices, html, setHistory: rows => { history = rows } }
+  return { run, stream, requests, stops, notices, html, setHistory: rows => { history = rows }, setHistoryLoader: loader => { loadHistory = loader } }
 }
 
 function assertIdle(html) {
@@ -177,4 +178,193 @@ test('stopping generation hides the placeholder without showing a failure', asyn
   assert.deepEqual(page.stops, [{ id: 7, traceId: 'trace-7' }])
   assert.equal(request.signal.aborted, true)
   assertIdle(await page.html())
+})
+
+
+test('done immediately hands the answer to the message list before EOF or history arrives', async () => {
+  const page = await setup()
+  const { sending, request } = await begin(page)
+  request.onEvent('token', { content: '不会消失的回答' })
+  request.onEvent('citation', { fileName: '资料.pdf', page: 3 })
+  request.onEvent('done', { messageId: 9 })
+  let html = await page.html()
+  assert.match(html, /不会消失的回答/)
+  assert.match(html, /资料.pdf/)
+  assertIdle(html)
+
+  let resolveHistory
+  page.setHistoryLoader(() => new Promise(resolve => { resolveHistory = resolve }))
+  request.resolve()
+  await new Promise(resolve => setImmediate(resolve))
+  html = await page.html()
+  assert.match(html, /不会消失的回答/)
+  // The done event has arrived, but the prior send still owns history synchronization.
+  page.run("text.value = '不能重叠发送'")
+  await page.run('send()')
+  assert.equal(page.requests.length, 1)
+  resolveHistory(response({ rows: [
+    { id: 9, role: 'assistant', content: '不会消失的回答', citations: [{ fileName: '资料.pdf', page: 3 }] },
+    { id: 8, role: 'user', content: '你好', citations: [] }
+  ] }))
+  await sending
+  html = await page.html()
+  assert.equal((html.match(/不会消失的回答/g) || []).length, 1)
+  assert.equal(page.run('messages.value.length'), 2)
+  assert.ok(html.indexOf('你好') < html.indexOf('不会消失的回答'))
+})
+
+test('history synchronization failure does not erase a completed answer', async () => {
+  const page = await setup()
+  const { sending, request } = await begin(page)
+  page.setHistoryLoader(async () => { throw new Error('历史加载失败') })
+  request.onEvent('token', { content: '同步失败也能看到' })
+  request.onEvent('done', { messageId: 9 })
+  request.resolve()
+  await sending
+  assert.match(await page.html(), /同步失败也能看到/)
+  assertIdle(await page.html())
+})
+
+test('stale missing or empty history rows cannot overwrite the streamed answer', async () => {
+  for (const rows of [[], [{ id: 9, role: 'assistant', content: '', citations: [] }]]) {
+    const page = await setup()
+    const { sending, request } = await begin(page)
+    page.setHistory(rows)
+    request.onEvent('token', { content: '暂未同步的回答' })
+    request.onEvent('citation', { fileName: '参考资料.pdf' })
+    request.onEvent('done', { messageId: 9 })
+    request.resolve()
+    await sending
+    const html = await page.html()
+    assert.match(html, /暂未同步的回答/)
+    assert.match(html, /参考资料.pdf/)
+    assert.equal(page.run("messages.value.filter(item => item.role === 'assistant').length"), 1)
+  }
+})
+
+test('history in descending ID order renders chronologically on entry and refresh', async () => {
+  const page = await setup()
+  page.setHistory([
+    { id: 4, role: 'assistant', content: '第二个回答', citations: [] },
+    { id: 3, role: 'user', content: '第二个问题', citations: [] },
+    { id: 2, role: 'assistant', content: '第一个回答', citations: [] },
+    { id: 1, role: 'user', content: '第一个问题', citations: [] }
+  ])
+  await page.run("selectConversation({ id: 7, title: '测试会话', mode: 'CHAT' })")
+  assert.deepEqual(Array.from(page.run('messages.value.map(item => item.id)')), [1, 2, 3, 4])
+  await page.run('reloadMessages()')
+  assert.deepEqual(Array.from(page.run('messages.value.map(item => item.id)')), [1, 2, 3, 4])
+})
+
+test('an interrupted stream preserves partial output as an ordinary message', async () => {
+  for (const terminal of ['error', 'stop']) {
+    const page = await setup()
+    const { sending, request } = await begin(page)
+    request.onEvent('start', { traceId: 'trace-7', messageId: 9 })
+    request.onEvent('token', { content: '已经输出的部分回答' })
+    if (terminal === 'error') {
+      request.onEvent('error', { message: 'AI 服务中断' })
+      request.resolve()
+    } else {
+      await page.run('stop()')
+    }
+    await sending
+    const html = await page.html()
+    assert.match(html, /已经输出的部分回答/)
+    assert.doesNotMatch(html, /StudyAgent · 生成中|class="cursor"|停止生成/)
+    if (terminal === 'error') assert.match(html, /AI 服务中断/)
+  }
+})
+
+test('history refresh replaces the local snapshot once and the next turn keeps prior answers', async () => {
+  const page = await setup()
+  const first = await begin(page)
+  first.request.onEvent('token', { content: '第一轮回答' })
+  first.request.onEvent('done', { messageId: 9 })
+  first.request.resolve()
+  await first.sending
+  page.setHistory([
+    { id: 9, role: 'assistant', content: '第一轮回答', citations: [] },
+    { id: 8, role: 'user', content: '你好', citations: [] }
+  ])
+  await page.run('reloadMessages()')
+  assert.equal(page.run('messages.value.some(item => item.pendingSync)'), false)
+  page.run("text.value = '第二轮问题'")
+  const secondSending = page.run('send()')
+  const second = page.requests[1]
+  second.onEvent('start', { traceId: 'trace-2', messageId: 10 })
+  second.onEvent('token', { content: '第二轮回答' })
+  second.onEvent('done', { messageId: 11 })
+  let html = await page.html()
+  assert.equal((html.match(/第一轮回答/g) || []).length, 1)
+  assert.equal((html.match(/第二轮回答/g) || []).length, 1)
+  assert.equal(page.run('messages.value.at(-1).id'), 11)
+  page.setHistory([
+    { id: 11, role: 'assistant', content: '第二轮回答', citations: [] },
+    { id: 10, role: 'user', content: '第二轮问题', citations: [] },
+    { id: 9, role: 'assistant', content: '第一轮回答', citations: [] },
+    { id: 8, role: 'user', content: '你好', citations: [] }
+  ])
+  second.resolve()
+  await secondSending
+  html = await page.html()
+  assert.deepEqual(Array.from(page.run('messages.value.map(item => item.id)')), [8, 9, 10, 11])
+  assert.equal((html.match(/第二轮回答/g) || []).length, 1)
+})
+
+test('a late history response from the previous conversation cannot replace the current messages', async () => {
+  const page = await setup()
+  const { sending, request } = await begin(page)
+  request.onEvent('token', { content: '旧会话回答' })
+  request.onEvent('done', { messageId: 9 })
+  let resolveOldHistory
+  page.setHistoryLoader(id => id === 7
+    ? new Promise(resolve => { resolveOldHistory = resolve })
+    : Promise.resolve(response({ rows: [{ id: 20, role: 'assistant', content: '新会话历史', citations: [] }] })))
+  request.resolve()
+  await new Promise(resolve => setImmediate(resolve))
+  await page.run("selectConversation({ id: 12, title: '另一会话', mode: 'CHAT' })")
+  resolveOldHistory(response({ rows: [{ id: 9, role: 'assistant', content: '旧会话回答', citations: [] }] }))
+  await sending
+  const html = await page.html()
+  assert.match(html, /新会话历史/)
+  assert.doesNotMatch(html, /旧会话回答/)
+})
+
+test('generation events stay in their originating conversation when the user switches chats', async () => {
+  const page = await setup()
+  const { sending, request } = await begin(page)
+  request.onEvent('token', { content: '原会话的回答' })
+  page.setHistory([{ id: 20, role: 'assistant', content: '另一个会话', citations: [] }])
+  await page.run("selectConversation({ id: 12, title: '另一会话', mode: 'CHAT' })")
+  let html = await page.html()
+  assert.doesNotMatch(html, /原会话的回答|StudyAgent · 生成中/)
+  request.onEvent('done', { messageId: 9 })
+  request.resolve()
+  await sending
+  html = await page.html()
+  assert.match(html, /另一个会话/)
+  assert.doesNotMatch(html, /原会话的回答/)
+})
+
+test('a buffered earlier answer retains its chronological position when a later turn synchronizes', async () => {
+  const page = await setup()
+  const first = await begin(page)
+  first.request.onEvent('token', { content: '较早的未同步回答' })
+  first.request.onEvent('done', { messageId: 9 })
+  first.request.resolve()
+  await first.sending
+  page.run("text.value = '后续问题'")
+  const secondSending = page.run('send()')
+  const second = page.requests[1]
+  second.onEvent('token', { content: '后续回答' })
+  second.onEvent('done', { messageId: 11 })
+  page.setHistory([
+    { id: 11, role: 'assistant', content: '后续回答', citations: [] },
+    { id: 10, role: 'user', content: '后续问题', citations: [] },
+    { id: 8, role: 'user', content: '你好', citations: [] }
+  ])
+  second.resolve()
+  await secondSending
+  assert.deepEqual(Array.from(page.run('messages.value.map(item => item.id)')), [8, 9, 10, 11])
 })

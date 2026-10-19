@@ -110,6 +110,13 @@ LangGraph
 -   如果后续确定具体向量数据库，只替换 AI 服务的 vector adapter，不修改
     `/api/**` 契约。
 
+当前实现：AI 服务通过 `VectorStoreAdapter` 使用 Milvus 2.6.3；显式的
+`memory`（兼容旧值 `none`）仅用于临时开发和自动化测试。Milvus 使用
+64 维 `local-hash-v1` 向量、COSINE 相似度及 Strong 读一致性；检索和删除保留
+`user_id + knowledge_base_id` 过滤。部署采用独立 etcd 和 MinIO 三个持久卷；
+MinIO 在此仅为 Milvus 内部对象存储，业务文件仍由原有文件存储服务管理。
+连接失败不会自动切换到内存。详细配置及切换说明见 `docs/MILVUS.md`。
+
 ------------------------------------------------------------------------
 
 # 4. 服务职责边界
@@ -921,21 +928,19 @@ Spring Boot校验资源
 -   不应返回"完全成功"后静默遗留；
 -   记录补偿任务/错误日志；
 -   重复 DELETE 必须安全；
--   Vector 删除以 `document_id` 过滤；
+-   Vector 文档删除以 `user_id + knowledge_base_id + document_id` 过滤；
 -   KB 删除以 `user_id + knowledge_base_id` 过滤。
 
-当前 API.md 没有定义 FastAPI
-的"删除向量"内部接口，因此正式编码删除知识库/文档前，应补充内部删除接口，而不是让
-Spring Boot 直接连接向量数据库。
-
-推荐：
+API.md 8.4.3 与本文件 38.2 已定义 FastAPI 向量删除内部接口。
+Spring Boot 校验资源归属后调用以下接口：
 
 ``` text
 DELETE /internal/rag/documents/{documentId}
 DELETE /internal/rag/knowledge-bases/{knowledgeBaseId}
 ```
 
-并携带可信 `userId`/服务身份。
+文档删除查询参数为 `userId + knowledgeBaseId`，知识库删除查询参数为 `userId`；
+均携带内部服务令牌，用户身份由 Spring Boot 已认证上下文提供。
 
 ------------------------------------------------------------------------
 

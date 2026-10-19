@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,10 +24,15 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com"
     llm_timeout: float = Field(default=30.0, gt=0)
     tool_timeout: float = Field(default=5.0, gt=0)
-    tool_max_calls: int = Field(default=4, ge=1, le=8)
-    max_agent_steps: int = Field(default=6, ge=1, le=10)
+    tool_max_calls: int = Field(default=8, ge=1, le=16)#tool_max_calls: int = Field(default=4, ge=1, le=8)
+    max_agent_steps: int = Field(default=10, ge=1, le=16)#max_agent_steps: int = Field(default=6, ge=1, le=10)
     rag_top_k: int = Field(default=5, ge=1, le=20)
-    vector_store_provider: str = "none"
+    vector_store_provider: Literal["milvus", "memory", "none"] = "milvus"
+    milvus_uri: str = Field(default="http://localhost:19530", pattern=r"^https?://")
+    milvus_token: str = Field(default="", repr=False)
+    milvus_db_name: str = Field(default="default", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=255)
+    milvus_collection: str = Field(default="study_agent_local_hash_v1", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=255)
+    milvus_timeout: float = Field(default=10.0, gt=0, le=120)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

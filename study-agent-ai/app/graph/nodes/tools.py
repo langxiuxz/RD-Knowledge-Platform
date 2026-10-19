@@ -2,7 +2,7 @@ import json
 from typing import Any, Dict
 
 from app.graph.state import AgentState
-from app.rag.vector_store import InMemoryVectorStore
+from app.rag.vector_store import VectorStoreAdapter
 from app.tools.registry import KnowledgeSearchArguments, ToolRegistry
 
 
@@ -69,7 +69,7 @@ def route_after_agent(state: AgentState) -> str:
 
 
 class ToolNode:
-    def __init__(self, registry: ToolRegistry, max_calls: int, vector_store: InMemoryVectorStore) -> None:
+    def __init__(self, registry: ToolRegistry, max_calls: int, vector_store: VectorStoreAdapter) -> None:
         self._registry = registry
         self._max_calls = max_calls
         self._vector_store = vector_store

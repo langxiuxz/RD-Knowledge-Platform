@@ -6,12 +6,17 @@ from app.api import agent, health, plan, quiz, rag
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
+from app.rag.vector_store import vector_store
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
-    yield
+    try:
+        await vector_store.initialize()
+        yield
+    finally:
+        await vector_store.close()
 
 
 settings = get_settings()

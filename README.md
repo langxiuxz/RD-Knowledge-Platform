@@ -2,6 +2,10 @@
 
 StudyAgent 是一个面向个人学习的 AI 学习平台，采用 Vue 3 + Spring Boot + FastAPI 的三层架构。浏览器只访问 Spring Boot 业务后端，FastAPI 仅作为内部 AI 服务使用。
 
+优化：
+1.流式输出并不是真正的流式，是在模型研究已经输出全部内容后才一次性返回给前端，前端再分字符渲染。如果模型输出内容较多，前端渲染时间较长，影响用户体验。后续考虑实现真正的流式输出。
+2.长期记忆实测新建对话后会消失，但确实已经启用，具体是结构问题还是代码问题还要研究。
+3.Vector Store 已接入 Milvus 持久化；首次切换需要重新上传此前仅存在内存中的文档索引，详见 `docs/MILVUS.md`。
 ## 核心功能
 
 - 用户注册、登录、RefreshToken、个人资料和密码管理
@@ -41,7 +45,7 @@ FastAPI + Pydantic + LangChain/LangGraph + LLM + Vector Store
 - MySQL 8+
 - Redis 6+
 
-当前实现的 MVP Vector Store 在无外部向量数据库时可使用内存适配器，重启 AI 服务后索引会丢失；生产环境应接入持久化 Vector Store。
+Vector Store 默认使用 Milvus 2.6.3，Docker Compose 提供持久化部署。仅在临时本地开发时显式设置 `VECTOR_STORE_PROVIDER=memory` 使用内存，重启会丢失索引。配置、迁移和验证见 [Milvus 部署说明](docs/MILVUS.md)。
 
 ## 环境变量
 
@@ -60,6 +64,9 @@ FastAPI + Pydantic + LangChain/LangGraph + LLM + Vector Store
 | `INTERNAL_TOKEN` | Spring Boot 与 FastAPI 内部认证令牌 |
 | `AI_SERVICE_BASE_URL` | Spring Boot 调用 FastAPI 地址 |
 | `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | LLM 配置；不配置时使用可运行的本地 fallback |
+| `VECTOR_STORE_PROVIDER` | 向量后端，默认 `milvus`；`memory` 为临时内存模式 |
+| `MILVUS_URI` / `MILVUS_TOKEN` / `MILVUS_DB_NAME` / `MILVUS_COLLECTION` / `MILVUS_TIMEOUT` | Milvus 连接、可选令牌、数据库、集合和调用超时 |
+| `MILVUS_MINIO_USER` / `MILVUS_MINIO_PASSWORD` | Compose 内 Milvus 对象存储的凭据 |
 | `FILE_STORAGE_ROOT` | 文件存储目录 |
 | `VITE_API_BASE_URL` | 前端 API 前缀，默认 `/api` |
 
@@ -87,7 +94,9 @@ CREATE DATABASE study_agent DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicod
 
 确保 MySQL 在 `3306`、Redis 在 `6379` 监听，并准备 `study_agent` 数据库。
 
-### 2. 启动 FastAPI
+### 2. 启动 Milvus 与 FastAPI
+
+先按 `docs/MILVUS.md` 启动 Milvus。宿主机 FastAPI 使用 `MILVUS_URI=http://localhost:19530`，并将 AI 服务 `.env` 中的 `VECTOR_STORE_PROVIDER` 改为 `milvus`（旧配置可能仍为 `none`）。
 
 cd D:\StudyAgent\study-agent-ai
 .\.venv311\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -138,7 +147,7 @@ npm run dev
 
 ## Docker 启动
 
-Docker Compose 会启动 MySQL、Redis、FastAPI、Spring Boot 和 Nginx/Vue。FastAPI、MySQL、Redis 只加入内部网络，不映射到宿主机公网端口。
+Docker Compose 会启动 MySQL、Redis、Milvus（含专用 etcd/MinIO）、FastAPI、Spring Boot 和 Nginx/Vue。Milvus、FastAPI、MySQL、Redis 不映射宿主机端口；Milvus 的数据、元数据和对象分别保存在三个命名卷中。`docker compose down` 保留这些卷。
 
 ```powershell
 Copy-Item .env.example .env
@@ -220,7 +229,7 @@ README-assets/
 
 ### RAG 索引重启后消失
 
-当前默认 Vector Store 是 MVP 内存适配器。生产部署需要接入持久化向量数据库或对象存储索引。
+检查 AI 服务是否仍使用旧 `.env` 中的 `VECTOR_STORE_PROVIDER=none` 或 `memory`，将其改为 `milvus`。确认连接同一个 `MILVUS_URI`、数据库和集合，并保留全部 Milvus 数据卷。此前仅存在内存的索引需要重新上传文档构建，不能从 MySQL 自动恢复。详见 `docs/MILVUS.md`。
 
 ### SSE 没有实时输出
 
@@ -228,4 +237,4 @@ README-assets/
 
 ## 当前状态
 
-项目已达到本地可运行、可演示的 MVP 整合状态。生产化仍需要持久化 Vector Store、完整监控、HTTPS、限流和更完整的端到端自动化测试。
+项目已达到本地可运行、可演示的 MVP 整合状态。已接入 Milvus 持久化 Vector Store；生产化仍需要完整监控、HTTPS、限流和更完整的端到端自动化测试。

@@ -1,27 +1,9 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 import math
 
 from app.embeddings.local import embed
+from app.rag.base import VectorRecord, VectorStoreAdapter
 from app.schemas.rag import RetrievedChunk
-
-@dataclass(frozen=True)
-class VectorRecord:
-    vector: Sequence[float]
-    content: str
-    metadata: Dict[str, object]
-
-class VectorStoreAdapter(ABC):
-    @abstractmethod
-    async def upsert(self, records: List[VectorRecord]) -> None: ...
-    @abstractmethod
-    async def delete_document(self, user_id: int, knowledge_base_id: int, document_id: int) -> None: ...
-    @abstractmethod
-    async def delete_knowledge_base(self, user_id: int, knowledge_base_id: int) -> None: ...
-    @abstractmethod
-    async def retrieve(self, user_id: int, knowledge_base_id: int, query: str, top_k: int,
-                       score_threshold: Optional[float] = None) -> List[RetrievedChunk]: ...
 
 class InMemoryVectorStore(VectorStoreAdapter):
     def __init__(self) -> None:
@@ -69,5 +51,17 @@ def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
     denominator = math.sqrt(sum(x * x for x in left)) * math.sqrt(sum(x * x for x in right))
     return sum(x * y for x, y in zip(left, right)) / denominator if denominator else 0.0
 
-# The adapter is intentionally replaceable with Qdrant/Milvus/etc. later.
-vector_store = InMemoryVectorStore()
+def create_vector_store(settings=None) -> VectorStoreAdapter:
+    from app.core.config import get_settings
+
+    settings = settings or get_settings()
+    if settings.vector_store_provider in {"memory", "none"}:
+        # "none" is retained as an explicit legacy development setting.
+        return InMemoryVectorStore()
+    if settings.vector_store_provider == "milvus":
+        from app.rag.milvus_store import MilvusVectorStore
+        return MilvusVectorStore(settings)
+    raise ValueError("Unsupported vector store provider")
+
+
+vector_store = create_vector_store()

@@ -1,9 +1,9 @@
 from app.graph.state import AgentState
-from app.rag.vector_store import InMemoryVectorStore
+from app.rag.vector_store import VectorStoreAdapter
 
 
 class RetrieveNode:
-    def __init__(self, vector_store: InMemoryVectorStore, top_k: int) -> None:
+    def __init__(self, vector_store: VectorStoreAdapter, top_k: int) -> None:
         self._vector_store = vector_store
         self._top_k = top_k
 

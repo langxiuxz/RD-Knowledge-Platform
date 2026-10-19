@@ -1,11 +1,11 @@
 import logging
 from typing import Any, Dict
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query
 
 from app.clients.spring_boot import SpringBootClient
 from app.core.config import get_settings
 from app.core.security import require_internal_token
-from app.embeddings.local import embed
+from app.embeddings.local import MODEL, embed
 from app.loaders.document import load_document
 from app.schemas.rag import IndexRequest, RetrieveRequest
 from app.rag.vector_store import VectorRecord, vector_store
@@ -29,12 +29,15 @@ async def retrieve(request: RetrieveRequest) -> Dict[str, Any]:
     return {"code": 1, "msg": "success", "data": {"chunks": [chunk.model_dump(by_alias=True) for chunk in chunks]}}
 
 @router.delete("/documents/{document_id}", dependencies=[Depends(require_internal_token)])
-async def delete_document(document_id: int, userId: int, knowledgeBaseId: int) -> Dict[str, Any]:
+async def delete_document(document_id: int = Path(gt=0, lt=2**63),
+                          userId: int = Query(gt=0, lt=2**63),
+                          knowledgeBaseId: int = Query(gt=0, lt=2**63)) -> Dict[str, Any]:
     await vector_store.delete_document(userId, knowledgeBaseId, document_id)
     return {"code": 1, "msg": "success", "data": None}
 
 @router.delete("/knowledge-bases/{knowledge_base_id}", dependencies=[Depends(require_internal_token)])
-async def delete_knowledge_base(knowledge_base_id: int, userId: int) -> Dict[str, Any]:
+async def delete_knowledge_base(knowledge_base_id: int = Path(gt=0, lt=2**63),
+                                userId: int = Query(gt=0, lt=2**63)) -> Dict[str, Any]:
     await vector_store.delete_knowledge_base(userId, knowledge_base_id)
     return {"code": 1, "msg": "success", "data": None}
 
@@ -56,7 +59,7 @@ async def _process_document(request: IndexRequest) -> None:
             metadata = {"chunk_id": chunk_id, "user_id": request.user_id,
                         "knowledge_base_id": request.knowledge_base_id, "document_id": request.document_id,
                         "file_name": request.file_name, "page": chunk.page, "chunk_index": global_index,
-                        "embedding_model": "local-hash-v1"}
+                        "embedding_model": MODEL}
             records.append(VectorRecord(embed(chunk.content), chunk.content, metadata))
         await vector_store.upsert(records)
         await client.document_progress(request.document_id, request.task_id, "READY", 100, len(records))

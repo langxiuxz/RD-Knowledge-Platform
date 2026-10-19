@@ -3,6 +3,7 @@ import math
 from typing import List
 
 DIMENSION = 64
+MODEL = "local-hash-v1"
 
 def embed(text: str) -> List[float]:
     values = [0.0] * DIMENSION

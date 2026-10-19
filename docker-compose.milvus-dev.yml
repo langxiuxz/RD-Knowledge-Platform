@@ -1,0 +1,5 @@
+# Only expose Milvus to this machine for a host-based FastAPI development process.
+services:
+  milvus:
+    ports:
+      - "127.0.0.1:19530:19530"
