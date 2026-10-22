@@ -30,7 +30,7 @@ class MessagePersistenceServiceTest {
         when(messageMapper.complete(9001L, 1L, "answer", "trace-1", "stop")).thenReturn(0);
 
         service.complete(9001L, 1L, "answer", "trace-1", "stop",
-                List.of(new AiClient.Citation("chunk-1", 101L, "notes.pdf", 1, 0.9)));
+                List.of(new AiClient.Citation("chunk-1", 101L, "notes.pdf", 1, 0.9, 1001L, 501L)));
 
         verify(citationMapper, never()).insertBatch(anyList());
     }

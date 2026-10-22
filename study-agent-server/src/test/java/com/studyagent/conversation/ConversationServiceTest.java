@@ -8,6 +8,8 @@ import com.studyagent.conversation.mapper.MessageCitationMapper;
 import com.studyagent.conversation.mapper.MessageMapper;
 import com.studyagent.conversation.service.ConversationService;
 import com.studyagent.knowledge.service.KnowledgeBaseService;
+import com.studyagent.knowledge.service.KnowledgeSnapshotService;
+import com.studyagent.project.service.ProjectAccessService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -23,11 +25,13 @@ class ConversationServiceTest {
     @Mock MessageMapper messageMapper;
     @Mock MessageCitationMapper citationMapper;
     @Mock KnowledgeBaseService knowledgeBaseService;
+    @Mock ProjectAccessService projectAccessService;
+    @Mock KnowledgeSnapshotService knowledgeSnapshotService;
 
     @Test
     void get_whenOwnedByAnotherUser_shouldReject() {
         ConversationService service = new ConversationService(
-                conversationMapper, messageMapper, citationMapper, knowledgeBaseService);
+                conversationMapper, messageMapper, citationMapper, knowledgeBaseService, projectAccessService, knowledgeSnapshotService);
         when(conversationMapper.findByIdAndUserId(30L, 2L)).thenReturn(null);
 
         assertThatThrownBy(() -> service.get(2L, 30L))
@@ -39,7 +43,7 @@ class ConversationServiceTest {
     @Test
     void messages_shouldVerifyConversationOwnershipBeforeQueryingMessages() {
         ConversationService service = new ConversationService(
-                conversationMapper, messageMapper, citationMapper, knowledgeBaseService);
+                conversationMapper, messageMapper, citationMapper, knowledgeBaseService, projectAccessService, knowledgeSnapshotService);
         ConversationEntity owned = new ConversationEntity();
         owned.setId(30L);
         owned.setUserId(1L);

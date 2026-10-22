@@ -38,16 +38,16 @@ public class RestClientAiClient implements AiClient {
     }
 
     @Override
-    public void deleteDocument(Long userId, Long knowledgeBaseId, Long documentId) {
-        restClient.delete().uri(uriBuilder -> uriBuilder.path("/internal/rag/documents/{documentId}")
-                        .queryParam("userId", userId).queryParam("knowledgeBaseId", knowledgeBaseId)
-                        .build(documentId)).retrieve().toBodilessEntity();
+    public void deleteDocumentVersion(Long projectId, Long knowledgeBaseId, Long documentVersionId) {
+        restClient.delete().uri(uriBuilder -> uriBuilder.path("/internal/rag/document-versions/{versionId}")
+                        .queryParam("projectId", projectId).queryParam("knowledgeBaseId", knowledgeBaseId)
+                        .build(documentVersionId)).retrieve().toBodilessEntity();
     }
 
     @Override
-    public void deleteKnowledgeBase(Long userId, Long knowledgeBaseId) {
+    public void deleteKnowledgeBase(Long projectId, Long knowledgeBaseId) {
         restClient.delete().uri(uriBuilder -> uriBuilder.path("/internal/rag/knowledge-bases/{knowledgeBaseId}")
-                        .queryParam("userId", userId).build(knowledgeBaseId)).retrieve().toBodilessEntity();
+                        .queryParam("projectId", projectId).build(knowledgeBaseId)).retrieve().toBodilessEntity();
     }
 
     @Override
@@ -57,7 +57,8 @@ public class RestClientAiClient implements AiClient {
                 .retrieve().body(RetrieveEnvelope.class);
         if (envelope == null || envelope.data() == null || envelope.data().chunks() == null) return List.of();
         return Arrays.stream(envelope.data().chunks()).map(c ->
-                new RetrievedChunk(c.chunkId(), c.documentId(), c.fileName(), c.page(), c.content(), c.score())).toList();
+                new RetrievedChunk(c.chunkId(), c.documentId(), c.documentVersionId(), c.knowledgeSnapshotId(),
+                        c.fileName(), c.page(), c.content(), c.score())).toList();
     }
 
     @Override
@@ -142,6 +143,21 @@ public class RestClientAiClient implements AiClient {
         return new PlanGenerateResponse(envelope.data().title(), Arrays.asList(envelope.data().tasks()));
     }
 
+    @Override
+    public CapabilitySummary summarizeCapability(CapabilitySummaryRequest request) {
+        ReportEnvelope envelope=restClient.post().uri("/internal/reports/capability-summary")
+                .contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(ReportEnvelope.class);
+        if(envelope==null || envelope.data()==null) throw new IllegalStateException("AI report response is empty");
+        return envelope.data();
+    }
+
+    @Override
+    public DrillMatch normalizeDrillAction(DrillNormalizeRequest request) {
+        DrillEnvelope envelope=restClient.post().uri("/internal/drills/normalize-action")
+                .contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(DrillEnvelope.class);
+        return envelope==null ? null : envelope.data();
+    }
+
     private void accept(StreamEventConsumer consumer, StreamEvent event) {
         try {
             consumer.accept(event);
@@ -156,8 +172,8 @@ public class RestClientAiClient implements AiClient {
     private record IndexData(String taskId) {}
     private record RetrieveEnvelope(int code, String msg, RetrieveData data) {}
     private record RetrieveData(RetrieveChunk[] chunks) {}
-    private record RetrieveChunk(String chunkId, Long documentId, String fileName, Integer page,
-                                 String content, Double score) {}
+    private record RetrieveChunk(String chunkId, Long documentId, Long documentVersionId, Long knowledgeSnapshotId,
+                                 String fileName, Integer page, String content, Double score) {}
     private record AgentEnvelope(int code, String msg, AgentData data) {}
     private record AgentData(String answer, Citation[] citations, ToolCall[] toolCalls, String traceId) {}
     private record QuizEnvelope(int code, String msg, QuizData data) {}
@@ -165,4 +181,6 @@ public class RestClientAiClient implements AiClient {
     private record ShortGradeEnvelope(int code, String msg, ShortGradeResponse data) {}
     private record PlanEnvelope(int code, String msg, PlanData data) {}
     private record PlanData(String title, GeneratedPlanTask[] tasks) {}
+    private record DrillEnvelope(int code, String msg, DrillMatch data) {}
+    private record ReportEnvelope(int code, String msg, CapabilitySummary data) {}
 }

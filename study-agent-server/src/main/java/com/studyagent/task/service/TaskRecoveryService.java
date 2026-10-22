@@ -1,7 +1,8 @@
 package com.studyagent.task.service;
 
 import com.studyagent.config.TaskRecoveryProperties;
-import com.studyagent.document.mapper.DocumentMapper;
+import com.studyagent.document.mapper.DocumentVersionMapper;
+import com.studyagent.insight.mapper.CapabilityReportMapper;
 import com.studyagent.plan.mapper.StudyPlanMapper;
 import com.studyagent.quiz.mapper.QuizMapper;
 import org.slf4j.Logger;
@@ -16,16 +17,19 @@ public class TaskRecoveryService {
     private static final Logger log = LoggerFactory.getLogger(TaskRecoveryService.class);
     public static final String DOCUMENT_TIMEOUT = "文档处理超时或服务中断，请重新处理文档";
     public static final String GENERATION_TIMEOUT = "AI生成超时或服务中断，请重新发起生成";
-    private final DocumentMapper documents;
+    private final DocumentVersionMapper documents;
     private final QuizMapper quizzes;
     private final StudyPlanMapper plans;
+    private final CapabilityReportMapper reports;
     private final TaskRecoveryProperties properties;
 
-    public TaskRecoveryService(DocumentMapper documents, QuizMapper quizzes, StudyPlanMapper plans,
+    public TaskRecoveryService(DocumentVersionMapper documents, QuizMapper quizzes, StudyPlanMapper plans,
+                               CapabilityReportMapper reports,
                                TaskRecoveryProperties properties) {
         this.documents = documents;
         this.quizzes = quizzes;
         this.plans = plans;
+        this.reports = reports;
         this.properties = properties;
     }
 
@@ -38,6 +42,8 @@ public class TaskRecoveryService {
                 properties.batchSize(), GENERATION_TIMEOUT));
         recover("study_plan", () -> plans.failStaleTasks(properties.generationTimeout().getSeconds(),
                 properties.batchSize(), GENERATION_TIMEOUT));
+        recover("capability_report", () -> reports.failStale(properties.reportTimeout().getSeconds(),
+                properties.batchSize(), "能力报告生成超时或服务中断，请重新发起生成"));
     }
 
     private void recover(String type, IntSupplier update) {

@@ -3,14 +3,14 @@
 <mapper namespace="com.studyagent.conversation.mapper.MessageCitationMapper">
     <insert id="insertBatch">
         INSERT INTO sa_message_citation
-        (message_id, document_id, chunk_id, file_name, page, score, sort_order)
+        (message_id, document_id, document_version_id, knowledge_snapshot_id, chunk_id, file_name, page, score, sort_order)
         VALUES
         <foreach collection="rows" item="row" separator=",">
-            (#{row.messageId}, #{row.documentId}, #{row.chunkId}, #{row.fileName}, #{row.page}, #{row.score}, #{row.sortOrder})
+            (#{row.messageId}, #{row.documentId}, #{row.documentVersionId}, #{row.knowledgeSnapshotId}, #{row.chunkId}, #{row.fileName}, #{row.page}, #{row.score}, #{row.sortOrder})
         </foreach>
     </insert>
     <select id="findByMessageId" resultType="com.studyagent.conversation.entity.MessageCitationEntity">
-        SELECT id, message_id, document_id, chunk_id, file_name, page, score, sort_order
+        SELECT id, message_id, document_id, document_version_id, knowledge_snapshot_id, chunk_id, file_name, page, score, sort_order
         FROM sa_message_citation WHERE message_id = #{messageId}
         ORDER BY sort_order ASC, id ASC
     </select>

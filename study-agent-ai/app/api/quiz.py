@@ -46,24 +46,46 @@ async def grade_short(request: ShortGradeRequest) -> dict:
 
 async def _generate(request: QuizGenerateRequest) -> QuizGenerateResponse:
     settings = get_settings()
+    chunks = []
+    if request.project_id is not None:
+        chunks = await vector_store.retrieve(
+            request.project_id, request.knowledge_base_id, request.knowledge_snapshot_id,
+            request.document_version_ids, request.topic or "quiz", min(settings.rag_top_k, 8), None,
+        )
+        if not chunks:
+            raise ValueError("no content found in the published knowledge snapshot")
     if not is_remote_provider_configured(settings):
-        return _local_quiz(request)
+        return _local_quiz(request, chunks)
     context = ""
-    if request.knowledge_base_id is not None:
+    if request.project_id is None and request.knowledge_base_id is not None:
         chunks = await vector_store.retrieve(
             request.user_id, request.knowledge_base_id, request.topic or "quiz",
             min(settings.rag_top_k, 8), None,
         )
-        context = "\n".join(chunk.content for chunk in chunks)
+    context = "\n".join(chunk.content for chunk in chunks)
+    refs = [{"documentVersionId": chunk.document_version_id,
+             "knowledgeSnapshotId": chunk.knowledge_snapshot_id,
+             "chunkId": chunk.chunk_id, "documentId": chunk.document_id,
+             "fileName": chunk.file_name, "page": chunk.page} for chunk in chunks]
     prompt = (
-        "Return JSON only with shape {\"questions\":[{\"type\":...,\"topic\":...,"
+        "Return JSON only with shape {\"questions\":[{\"type\":...,\"topic\":...,\"knowledgeKey\":...,"
         "\"content\":...,\"options\":[{\"key\":...,\"text\":...}],\"answer\":...,"
-        "\"explanation\":...}]}. Generate exactly " + str(request.question_count)
+        "\"explanation\":...,\"sourceRefs\":...}]}. Use only provided context; each question must cite "
+        "one or more supplied source references and use a stable knowledgeKey. Generate exactly " + str(request.question_count)
         + f" questions. Allowed types: {request.types}. Difficulty: {request.difficulty}. "
-        + f"Topic: {request.topic or 'general study'}. Context: {context[:5000]}"
+        + f"Topic: {request.topic or 'general study'}. Context: {context[:5000]} References: {json.dumps(refs, ensure_ascii=False)}"
     )
     text = await LLMFactory(settings).create().generate(prompt)
-    return parse_structured_output(QuizGenerateResponse, text)
+    result = parse_structured_output(QuizGenerateResponse, text)
+    if request.project_id is not None:
+        allowed = set(request.document_version_ids)
+        for question in result.questions:
+            if not question.knowledge_key or not question.source_refs:
+                raise ValueError("V3 questions require knowledgeKey and sourceRefs")
+            if any(ref.get("documentVersionId") not in allowed or
+                   ref.get("knowledgeSnapshotId") != request.knowledge_snapshot_id for ref in question.source_refs):
+                raise ValueError("question source is outside the supplied snapshot")
+    return result
 
 
 async def _grade_short(request: ShortGradeRequest) -> ShortGradeResponse:
@@ -85,7 +107,7 @@ async def _grade_short(request: ShortGradeRequest) -> ShortGradeResponse:
     return result
 
 
-def _local_quiz(request: QuizGenerateRequest) -> QuizGenerateResponse:
+def _local_quiz(request: QuizGenerateRequest, chunks=()) -> QuizGenerateResponse:
     questions = []
     topic = request.topic or "综合知识"
     for index in range(request.question_count):
@@ -110,5 +132,11 @@ def _local_quiz(request: QuizGenerateRequest) -> QuizGenerateResponse:
             question = GeneratedQuestion(type=question_type, topic=topic,
                 content=f"请简述 {topic} 的核心概念。", options=None,
                 answer=f"说明 {topic} 的定义、作用和关键点。", explanation="覆盖核心定义和作用即可。")
+        if request.project_id is not None:
+            chunk = chunks[index % len(chunks)]
+            question.knowledge_key = (request.topic or "general").strip().lower().replace(" ", ".")[:128]
+            question.source_refs = [{"documentVersionId": chunk.document_version_id,
+                "knowledgeSnapshotId": chunk.knowledge_snapshot_id, "chunkId": chunk.chunk_id,
+                "documentId": chunk.document_id, "fileName": chunk.file_name, "page": chunk.page}]
         questions.append(question)
     return QuizGenerateResponse(questions=questions)

@@ -86,16 +86,20 @@ class ToolNode:
                 if name == "search_knowledge_base":
                     parsed = KnowledgeSearchArguments.model_validate(arguments)
                     kb_id = state.get("knowledge_base_id")
-                    if not kb_id:
-                        raise ValueError("No conversation knowledge base is bound")
+                    if not all(state.get(key) for key in (
+                            "project_id", "knowledge_base_id", "knowledge_snapshot_id")):
+                        raise ValueError("No published knowledge snapshot is bound")
                     chunks = await self._vector_store.retrieve(
-                        state["user_id"], kb_id, parsed.query, 5, None
+                        state["project_id"], kb_id, state["knowledge_snapshot_id"],
+                        state.get("allowed_document_version_ids", []), parsed.query, 5, None
                     )
                     result = [chunk.model_dump(by_alias=True) for chunk in chunks]
                     for chunk in result:
                         citations.append({"chunkId": chunk["chunkId"], "documentId": chunk["documentId"],
                                           "fileName": chunk["fileName"], "page": chunk.get("page"),
-                                          "score": chunk.get("score")})
+                                          "score": chunk.get("score"),
+                                          "documentVersionId": chunk["documentVersionId"],
+                                          "knowledgeSnapshotId": chunk["knowledgeSnapshotId"]})
                 else:
                     result = await self._registry.execute(name, state["user_id"], arguments)
                 item = {"name": name, "status": "success", "result": result, "error": None}

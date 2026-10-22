@@ -16,10 +16,11 @@ from app.rag.milvus_store import MilvusVectorStore
 from app.rag.vector_store import InMemoryVectorStore, VectorRecord, create_vector_store
 
 
-def record(user_id=1, kb_id=10, content="owned", **metadata):
+def record(project_id=1, kb_id=10, version_id=1000, content="owned", **metadata):
     return VectorRecord(embed(content), content, {
-        "chunk_id": "shared-chunk", "user_id": user_id, "knowledge_base_id": kb_id,
-        "document_id": 100, "file_name": "笔记.txt", "page": 2, "chunk_index": 0, **metadata,
+        "chunk_id": "shared-chunk", "project_id": project_id, "knowledge_base_id": kb_id,
+        "document_id": 100, "document_version_id": version_id,
+        "file_name": "笔记.txt", "page": 2, "chunk_index": 0, **metadata,
     })
 
 
@@ -33,7 +34,7 @@ def backend(monkeypatch):
              "embedding_model": DataType.VARCHAR, "embedding": DataType.FLOAT_VECTOR,
              "metadata": DataType.JSON}
     types.update({name: DataType.INT64 for name in
-                  ("user_id", "knowledge_base_id", "document_id", "page", "chunk_index")})
+                  ("project_id", "knowledge_base_id", "document_id", "document_version_id", "page", "chunk_index")})
     client.describe_collection.return_value = {
         "auto_id": False,
         "fields": [{"name": name, "type": kind, "is_primary": name == "id",
@@ -57,7 +58,7 @@ async def test_creates_collection_once_and_reuses_it_on_reconnect(backend):
     fields = {field["name"]: field for field in schema["fields"]}
     assert fields["embedding"]["params"]["dim"] == DIMENSION
     assert fields["id"]["is_primary"]
-    assert {"user_id", "knowledge_base_id", "document_id", "metadata"} <= fields.keys()
+    assert {"project_id", "knowledge_base_id", "document_id", "document_version_id", "metadata"} <= fields.keys()
     assert client.create_collection.call_args.kwargs["consistency_level"] == "Strong"
     await store.close()
     client.has_collection.return_value = True
@@ -75,7 +76,7 @@ async def test_incompatible_collection_fails_without_modifying_it(backend, misma
     if mismatch == "dimension":
         next(f for f in fields if f["name"] == "embedding")["params"]["dim"] = 1536
     elif mismatch == "field":
-        fields[:] = [f for f in fields if f["name"] != "user_id"]
+        fields[:] = [f for f in fields if f["name"] != "project_id"]
     elif mismatch == "metric":
         client.describe_index.return_value = {"metric_type": "L2"}
     else:
@@ -87,11 +88,11 @@ async def test_incompatible_collection_fails_without_modifying_it(backend, misma
     client.close.assert_called_once()
 
 
-async def test_upsert_uses_tenant_scoped_keys_and_flushes_before_success(backend):
+async def test_upsert_uses_project_kb_version_scoped_keys_and_flushes_before_success(backend):
     store, client, _ = backend
-    await store.upsert([record(), record(user_id=2), record(kb_id=11)])
+    await store.upsert([record(), record(project_id=2), record(kb_id=11), record(version_id=1001)])
     rows = client.upsert.call_args.kwargs["data"]
-    assert len({row["id"] for row in rows}) == 3
+    assert len({row["id"] for row in rows}) == 4
     assert rows[0]["metadata"]["chunk_id"] == "shared-chunk"
     assert rows[0]["embedding_model"] == "local-hash-v1"
     assert rows[0]["content"] == "owned"
@@ -106,8 +107,8 @@ async def test_upsert_uses_tenant_scoped_keys_and_flushes_before_success(backend
     VectorRecord([1.0], "bad", record().metadata),
     VectorRecord([float("nan")] * DIMENSION, "bad", record().metadata),
     record(embedding_model="different-model"),
-    record(user_id="1 or user_id > 0"),
-    record(user_id=True),
+    record(project_id="1 or project_id > 0"),
+    record(project_id=True),
     record(document_id=2**63),
     record(file_name="文" * 400),
     record(chunk_id=""),
@@ -126,29 +127,30 @@ async def test_invalid_records_do_not_partially_write(backend, bad_record):
 async def test_search_preserves_scope_threshold_and_response_contract(backend):
     store, client, _ = backend
     entity = {"chunk_id": "shared-chunk", "document_id": 100, "file_name": "笔记.txt",
-              "page": 2, "content": "owned"}
+              "document_version_id": 1000, "page": 2, "content": "owned"}
     client.search.return_value = [[{"distance": 0.9, "entity": entity},
                                    {"distance": 0.3, "entity": entity}]]
-    chunks = await store.retrieve(1, 10, "owned", 5, 0.6)
+    chunks = await store.retrieve(1, 10, 501, [1000], "owned", 5, 0.6)
     assert [chunk.model_dump(by_alias=True) for chunk in chunks] == [
-        {"chunkId": "shared-chunk", "documentId": 100, "fileName": "笔记.txt",
+        {"chunkId": "shared-chunk", "documentId": 100, "documentVersionId": 1000,
+         "knowledgeSnapshotId": 501, "fileName": "笔记.txt",
          "page": 2, "content": "owned", "score": 0.9}]
     args = client.search.call_args.kwargs
-    assert args["filter"] == "user_id == 1 and knowledge_base_id == 10"
+    assert args["filter"] == "project_id == 1 and knowledge_base_id == 10 and document_version_id in [1000]"
     assert args["consistency_level"] == "Strong"
     assert args["search_params"]["metric_type"] == "COSINE"
     assert args["timeout"] == 2
     assert args["data"] == [embed("owned")]
 
 
-async def test_deletes_always_scope_user_kb_and_optional_document(backend):
+async def test_deletes_always_scope_project_kb_and_document_version(backend):
     store, client, _ = backend
     for _ in range(2):
-        await store.delete_document(1, 10, 100)
+        await store.delete_document_version(1, 10, 1000)
         assert client.delete.call_args.kwargs["filter"] == (
-            "user_id == 1 and knowledge_base_id == 10 and document_id == 100")
+            "project_id == 1 and knowledge_base_id == 10 and document_version_id == 1000")
     await store.delete_knowledge_base(1, 10)
-    assert client.delete.call_args.kwargs["filter"] == "user_id == 1 and knowledge_base_id == 10"
+    assert client.delete.call_args.kwargs["filter"] == "project_id == 1 and knowledge_base_id == 10"
     assert client.flush.call_count == 3
 
 
@@ -156,7 +158,7 @@ async def test_sdk_timeout_is_sanitized_and_does_not_return_empty_success(backen
     store, client, _ = backend
     client.search.side_effect = TimeoutError("http://secret-user:secret-password@host")
     with pytest.raises(AIServiceError) as error:
-        await store.retrieve(1, 10, "query", 5)
+        await store.retrieve(1, 10, 501, [1000], "query", 5)
     assert error.value.code == "AI_SERVICE_ERROR"
     assert "secret-password" not in str(error.value)
     assert "secret-password" not in caplog.text
@@ -173,7 +175,7 @@ async def test_sync_sdk_does_not_block_event_loop(backend):
         return [[]]
 
     client.search.side_effect = slow_search
-    task = asyncio.create_task(store.retrieve(1, 10, "query", 5))
+    task = asyncio.create_task(store.retrieve(1, 10, 501, [1000], "query", 5))
     try:
         # This coroutine must keep running while the SDK search is blocked.
         for _ in range(100):
@@ -214,7 +216,8 @@ def test_api_maps_milvus_failure_to_existing_error_contract(backend, monkeypatch
     client.search.side_effect = TimeoutError("private-secret")
     monkeypatch.setattr(rag, "vector_store", store)
     response = TestClient(app).post("/internal/rag/retrieve", headers={"X-Internal-Token": "test-token"},
-                                    json={"userId": 1, "knowledgeBaseId": 10, "query": "query"})
+                                    json={"projectId": 1, "knowledgeBaseId": 10, "knowledgeSnapshotId": 501,
+                                          "documentVersionIds": [1000], "query": "query"})
     assert response.status_code == 503
     assert response.json()["code"] == "AI_SERVICE_ERROR"
     assert "private-secret" not in response.text
@@ -229,8 +232,8 @@ def authenticated(monkeypatch):
 
 
 @pytest.mark.parametrize("url", [
-    "/internal/rag/documents/100?userId=1&knowledgeBaseId=10",
-    "/internal/rag/knowledge-bases/10?userId=1",
+    "/internal/rag/document-versions/1000?projectId=1&knowledgeBaseId=10",
+    "/internal/rag/knowledge-bases/10?projectId=1",
 ])
 def test_delete_requires_internal_token(backend, monkeypatch, authenticated, url):
     store, client, _ = backend
@@ -240,13 +243,13 @@ def test_delete_requires_internal_token(backend, monkeypatch, authenticated, url
 
 
 @pytest.mark.parametrize("url", [
-    "/internal/rag/documents/0?userId=1&knowledgeBaseId=10",
-    "/internal/rag/documents/100?userId=-1&knowledgeBaseId=10",
-    "/internal/rag/documents/100?userId=1&knowledgeBaseId=0",
-    f"/internal/rag/documents/{2**63}?userId=1&knowledgeBaseId=10",
-    "/internal/rag/documents/100?userId=1",
-    "/internal/rag/knowledge-bases/-1?userId=1",
-    f"/internal/rag/knowledge-bases/10?userId={2**63}",
+    "/internal/rag/document-versions/0?projectId=1&knowledgeBaseId=10",
+    "/internal/rag/document-versions/1000?projectId=-1&knowledgeBaseId=10",
+    "/internal/rag/document-versions/1000?projectId=1&knowledgeBaseId=0",
+    f"/internal/rag/document-versions/{2**63}?projectId=1&knowledgeBaseId=10",
+    "/internal/rag/document-versions/1000?projectId=1",
+    "/internal/rag/knowledge-bases/-1?projectId=1",
+    f"/internal/rag/knowledge-bases/10?projectId={2**63}",
 ])
 def test_delete_rejects_invalid_ids_before_calling_milvus(backend, monkeypatch, authenticated, url):
     store, client, _ = backend
@@ -263,19 +266,23 @@ async def test_document_ready_requires_successful_persistent_write(backend, monk
     store, client, _ = backend
     bridge = Mock()
     bridge.download_file = AsyncMock(return_value=b"persistent document text")
-    bridge.document_progress = AsyncMock()
+    bridge.document_version_progress = AsyncMock()
     if failure == "flush":
         client.flush.side_effect = [None, TimeoutError("private-connection-secret")]
     elif failure:
         client.upsert.side_effect = TimeoutError("private-connection-secret")
     monkeypatch.setattr(rag, "_client", lambda: bridge)
     monkeypatch.setattr(rag, "vector_store", store)
-    request = IndexRequest(userId=1, knowledgeBaseId=10, documentId=100, taskId="task-persist",
-                           fileUrl="http://spring/internal/files/note.txt", fileType="txt", fileName="note.txt")
+    import hashlib
+    data = b"persistent document text"
+    bridge.download_file = AsyncMock(return_value=data)
+    request = IndexRequest(projectId=1, knowledgeBaseId=10, documentId=100, documentVersionId=1000,
+                           taskId="task-persist", fileUrl="http://spring/internal/files/note.txt",
+                           fileType="txt", fileName="note.txt", contentHash=hashlib.sha256(data).hexdigest())
 
     await rag._process_document(request)
 
-    callbacks = bridge.document_progress.call_args_list
+    callbacks = bridge.document_version_progress.call_args_list
     statuses = [call.args[2] for call in callbacks]
     if failure:
         assert statuses == ["PARSING", "CHUNKING", "EMBEDDING", "FAILED"]
@@ -287,6 +294,7 @@ async def test_document_ready_requires_successful_persistent_write(backend, monk
         assert client.flush.call_count == 2  # Scoped replacement delete, then upsert.
         row = client.upsert.call_args.kwargs["data"][0]
         assert row["document_id"] == 100
+        assert row["document_version_id"] == 1000
         assert row["embedding_model"] == "local-hash-v1"
 
 

@@ -57,12 +57,14 @@ public class ChatService {
         String mode = resolveMode(conversation, request);
         Long knowledgeBaseId = resolveKnowledgeBaseId(mode, conversation, request);
         validateKnowledgeBase(mode, request, knowledgeBaseId);
+        if (knowledgeBaseId != null) conversationService.scope(userId, conversation);
         MessagePersistenceService.MessageExchange exchange =
                 persistenceService.createExchange(userId, conversationId, request.content().trim());
         try {
             AiClient.AgentResponse response = aiClient.invoke(agentRequest(
                     userId, conversation, exchange.userMessageId(), request.content().trim(), mode,
                     knowledgeBaseId, false));
+            validateCitations(conversation, response.citations(), userId);
             persistenceService.complete(exchange.assistantMessageId(), userId, response.answer(), response.traceId(),
                     "stop", response.citations());
             List<MessageCitationVO> citations = toCitationVOs(response.citations());
@@ -79,6 +81,7 @@ public class ChatService {
         String mode = resolveMode(conversation, request);
         Long knowledgeBaseId = resolveKnowledgeBaseId(mode, conversation, request);
         validateKnowledgeBase(mode, request, knowledgeBaseId);
+        if (knowledgeBaseId != null) conversationService.scope(userId, conversation);
         MessagePersistenceService.MessageExchange exchange =
                 persistenceService.createExchange(userId, conversationId, request.content().trim());
         AiClient.AgentRequest aiRequest = agentRequest(
@@ -138,8 +141,10 @@ public class ChatService {
                         writeEvent(output, "token", event.data());
                     }
                     case "citation" -> {
-                        citations.add(citation(event.data()));
-                        writeEvent(output, "citation", event.data());
+                        var source = citation(event.data());
+                        validateCitation(source, aiRequest.knowledgeSnapshotId(), aiRequest.allowedDocumentVersionIds());
+                        citations.add(source);
+                        writeEvent(output, "citation", objectMapper.writeValueAsString(toCitationVO(source)));
                     }
                     case "done" -> {
                         String id = traceId.get();
@@ -180,7 +185,8 @@ public class ChatService {
         JsonNode data = objectMapper.readTree(json);
         return new AiClient.Citation(data.path("chunkId").asText(), data.path("documentId").asLong(),
                 data.path("fileName").asText(), data.path("page").isNull() ? null : data.path("page").asInt(),
-                data.path("score").isNull() ? null : data.path("score").asDouble());
+                data.path("score").isNull() ? null : data.path("score").asDouble(),
+                data.path("documentVersionId").asLong(), data.path("knowledgeSnapshotId").asLong());
     }
 
     private String doneData(Long messageId, String finishReason) throws Exception {
@@ -228,13 +234,31 @@ public class ChatService {
             java.util.Collections.reverse(recent);
         }
         return new AiClient.AgentRequest(userId, conversation.getId(), messageId, content, mode,
-                knowledgeBaseId, stream, recent);
+                knowledgeBaseId, stream, recent, conversation.getProjectId(),
+                knowledgeBaseId == null ? null : conversation.getKnowledgeSnapshotId(),
+                knowledgeBaseId == null ? List.of() : conversationService.scope(userId, conversation).allowedDocumentVersionIds());
     }
 
     private List<MessageCitationVO> toCitationVOs(List<AiClient.Citation> citations) {
         if (citations == null) return List.of();
-        return citations.stream().map(source -> new MessageCitationVO(source.documentId(), source.chunkId(),
-                source.fileName(), source.page(), source.score())).toList();
+        return citations.stream().map(this::toCitationVO).toList();
+    }
+
+    private MessageCitationVO toCitationVO(AiClient.Citation source) {
+        return new MessageCitationVO(source.documentId(), source.chunkId(), source.fileName(), source.page(),
+                source.score(), source.documentVersionId(), source.knowledgeSnapshotId());
+    }
+
+    private void validateCitations(ConversationEntity c, List<AiClient.Citation> citations, Long userId) {
+        if (citations == null || citations.isEmpty()) return;
+        var scope = conversationService.scope(userId, c);
+        for (var citation : citations) validateCitation(citation, scope.knowledgeSnapshotId(), scope.allowedDocumentVersionIds());
+    }
+
+    private void validateCitation(AiClient.Citation citation, Long snapshotId, List<Long> allowedVersionIds) {
+        if (!java.util.Objects.equals(citation.knowledgeSnapshotId(), snapshotId)
+                || !allowedVersionIds.contains(citation.documentVersionId()))
+            throw new IllegalStateException("Citation outside snapshot");
     }
 
     private static class CancellationSignal extends RuntimeException {}

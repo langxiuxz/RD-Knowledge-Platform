@@ -28,4 +28,10 @@ public class MessageCitationEntity {
     public void setScore(BigDecimal score) { this.score = score; }
     public Integer getSortOrder() { return sortOrder; }
     public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
+    private Long documentVersionId;
+    public Long getDocumentVersionId() { return documentVersionId; }
+    public void setDocumentVersionId(Long value) { this.documentVersionId = value; }
+    private Long knowledgeSnapshotId;
+    public Long getKnowledgeSnapshotId() { return knowledgeSnapshotId; }
+    public void setKnowledgeSnapshotId(Long value) { this.knowledgeSnapshotId = value; }
 }

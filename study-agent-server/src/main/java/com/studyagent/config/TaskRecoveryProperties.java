@@ -10,10 +10,12 @@ public record TaskRecoveryProperties(
         @DefaultValue("true") boolean enabled,
         @DefaultValue("15m") Duration documentTimeout,
         @DefaultValue("5m") Duration generationTimeout,
+        @DefaultValue("5m") Duration reportTimeout,
         @DefaultValue("100") int batchSize) {
     public TaskRecoveryProperties {
         if (documentTimeout == null || documentTimeout.getSeconds() < 1
-                || generationTimeout == null || generationTimeout.getSeconds() < 1) {
+                || generationTimeout == null || generationTimeout.getSeconds() < 1
+                || reportTimeout == null || reportTimeout.getSeconds() < 1) {
             throw new IllegalArgumentException("Task recovery timeouts must be at least one second");
         }
         if (batchSize < 1 || batchSize > 1000) {

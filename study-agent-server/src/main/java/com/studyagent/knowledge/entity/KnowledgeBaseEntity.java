@@ -4,34 +4,36 @@ import java.time.LocalDateTime;
 
 public class KnowledgeBaseEntity {
     private Long id;
-    private Long userId;
+    private Long projectId;
+    private Long createdBy;
+    private Long currentSnapshotId;
+    private Integer currentSnapshotNo;
     private String name;
     private String description;
-    private String embeddingModel;
     private String status;
+    private Long documentCount;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
-    private Long documentCount;
-    private Long chunkCount;
-
     public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
+    public void setId(Long value) { id=value; }
+    public Long getProjectId() { return projectId; }
+    public void setProjectId(Long value) { projectId=value; }
+    public Long getCreatedBy() { return createdBy; }
+    public void setCreatedBy(Long value) { createdBy=value; }
+    public Long getCurrentSnapshotId() { return currentSnapshotId; }
+    public void setCurrentSnapshotId(Long value) { currentSnapshotId=value; }
+    public Integer getCurrentSnapshotNo() { return currentSnapshotNo; }
+    public void setCurrentSnapshotNo(Integer value) { currentSnapshotNo=value; }
     public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public void setName(String value) { name=value; }
     public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getEmbeddingModel() { return embeddingModel; }
-    public void setEmbeddingModel(String embeddingModel) { this.embeddingModel = embeddingModel; }
+    public void setDescription(String value) { description=value; }
     public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public LocalDateTime getCreateTime() { return createTime; }
-    public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
-    public LocalDateTime getUpdateTime() { return updateTime; }
-    public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
+    public void setStatus(String value) { status=value; }
     public Long getDocumentCount() { return documentCount; }
-    public void setDocumentCount(Long documentCount) { this.documentCount = documentCount; }
-    public Long getChunkCount() { return chunkCount; }
-    public void setChunkCount(Long chunkCount) { this.chunkCount = chunkCount; }
+    public void setDocumentCount(Long value) { documentCount=value; }
+    public LocalDateTime getCreateTime() { return createTime; }
+    public void setCreateTime(LocalDateTime value) { createTime=value; }
+    public LocalDateTime getUpdateTime() { return updateTime; }
+    public void setUpdateTime(LocalDateTime value) { updateTime=value; }
 }

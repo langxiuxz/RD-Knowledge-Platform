@@ -1,0 +1,17 @@
+import request from './request'
+
+export const listOnboardingPaths = (projectId, params) => request.get(`/projects/${projectId}/onboarding-paths`, { params })
+export const createOnboardingPath = (projectId, payload) => request.post(`/projects/${projectId}/onboarding-paths`, payload)
+export const getOnboardingPath = (id) => request.get(`/onboarding-paths/${id}`)
+export const updateOnboardingPath = (id, payload) => request.put(`/onboarding-paths/${id}`, payload)
+export const addPathTask = (id, payload) => request.post(`/onboarding-paths/${id}/tasks`, payload)
+export const updatePathTask = (id, payload) => request.put(`/onboarding-path-tasks/${id}`, payload)
+export const deletePathTask = (id) => request.delete(`/onboarding-path-tasks/${id}`)
+export const reorderPathTasks = (id, taskIds) => request.put(`/onboarding-paths/${id}/task-order`, { taskIds })
+export const publishOnboardingPath = (id) => request.post(`/onboarding-paths/${id}/publish`)
+export const assignOnboardingPath = (id, payload) => request.post(`/onboarding-paths/${id}/assignments`, payload)
+export const listAssignments = (projectId, params) => request.get(`/projects/${projectId}/assignments`, { params })
+export const getAssignment = (id) => request.get(`/assignments/${id}`)
+export const startAssignment = (id) => request.post(`/assignments/${id}/start`)
+export const completeAssignmentTask = (id, note) => request.post(`/assignment-tasks/${id}/complete`, { note })
+export const submitAssignment = (id) => request.post(`/assignments/${id}/submit`)

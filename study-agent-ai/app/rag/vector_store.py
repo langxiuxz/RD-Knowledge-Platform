@@ -11,26 +11,33 @@ class InMemoryVectorStore(VectorStoreAdapter):
 
     async def upsert(self, records: List[VectorRecord]) -> None:
         for record in records:
-            self._records[str(record.metadata["chunk_id"])] = record
+            key = f"{record.metadata['project_id']}:{record.metadata['knowledge_base_id']}:{record.metadata['document_version_id']}:{record.metadata['chunk_id']}"
+            self._records[key] = record
 
-    async def delete_document(self, user_id: int, knowledge_base_id: int, document_id: int) -> None:
+    async def delete_document_version(self, project_id: int, knowledge_base_id: int, document_version_id: int) -> None:
         self._records = {key: value for key, value in self._records.items()
-                         if not (value.metadata.get("user_id") == user_id
+                         if not (value.metadata.get("project_id") == project_id
                                  and value.metadata.get("knowledge_base_id") == knowledge_base_id
-                                 and value.metadata.get("document_id") == document_id)}
+                                 and value.metadata.get("document_version_id") == document_version_id)}
 
-    async def delete_knowledge_base(self, user_id: int, knowledge_base_id: int) -> None:
+    async def delete_knowledge_base(self, project_id: int, knowledge_base_id: int) -> None:
         self._records = {key: value for key, value in self._records.items()
-                         if not (value.metadata.get("user_id") == user_id
+                         if not (value.metadata.get("project_id") == project_id
                                  and value.metadata.get("knowledge_base_id") == knowledge_base_id)}
 
-    async def retrieve(self, user_id: int, knowledge_base_id: int, query: str, top_k: int,
+    async def retrieve(self, project_id: int, knowledge_base_id: int, knowledge_snapshot_id: int,
+                       document_version_ids: List[int], query: str, top_k: int,
                        score_threshold: Optional[float] = None) -> List[RetrievedChunk]:
+        if not document_version_ids:
+            return []
+        allowed = set(document_version_ids)
         query_vector = embed(query)
         candidates = []
         for record in self._records.values():
-            # Both filters are mandatory. No caller can retrieve another tenant's records.
-            if record.metadata.get("user_id") != user_id or record.metadata.get("knowledge_base_id") != knowledge_base_id:
+            metadata = record.metadata
+            if (metadata.get("project_id") != project_id
+                    or metadata.get("knowledge_base_id") != knowledge_base_id
+                    or metadata.get("document_version_id") not in allowed):
                 continue
             score = _cosine(query_vector, record.vector)
             if score_threshold is not None and score < score_threshold:
@@ -39,8 +46,9 @@ class InMemoryVectorStore(VectorStoreAdapter):
         candidates.sort(key=lambda item: item[0], reverse=True)
         return [RetrievedChunk(chunkId=str(record.metadata["chunk_id"]),
                                documentId=int(record.metadata["document_id"]),
-                               fileName=str(record.metadata["file_name"]),
-                               page=int(record.metadata.get("page", 1)),
+                               documentVersionId=int(record.metadata["document_version_id"]),
+                               knowledgeSnapshotId=knowledge_snapshot_id,
+                               fileName=str(record.metadata["file_name"]), page=int(record.metadata.get("page", 1)),
                                content=record.content, score=score)
                 for score, record in candidates[:top_k]]
 

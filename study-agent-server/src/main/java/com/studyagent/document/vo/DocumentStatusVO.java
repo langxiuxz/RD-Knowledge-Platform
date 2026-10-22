@@ -1,9 +1,6 @@
 package com.studyagent.document.vo;
-
-import com.studyagent.document.entity.DocumentEntity;
-
-public record DocumentStatusVO(String status, Integer progress, String errorMessage) {
-    public static DocumentStatusVO from(DocumentEntity e) {
-        return new DocumentStatusVO(e.getStatus(), e.getProgress(), e.getErrorMessage());
-    }
+import com.studyagent.document.entity.DocumentVersionEntity;
+public record DocumentStatusVO(String processStatus, String publishStatus, Integer progress, Integer chunkCount, String errorMessage, String taskId) {
+ public static DocumentStatusVO from(DocumentVersionEntity e) { return new DocumentStatusVO(e.getProcessStatus(),e.getPublishStatus(),
+ e.getProgress(),e.getChunkCount(),e.getErrorMessage(),e.getCurrentTaskId()); }
 }

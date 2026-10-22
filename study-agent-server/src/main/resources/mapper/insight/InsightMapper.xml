@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.insight.mapper.InsightMapper">
+ <select id="overview" resultType="map">
+  SELECT
+   (SELECT COUNT(*) FROM sa_project_member WHERE project_id=#{projectId} AND role='LEARNER' AND status='ACTIVE') activeLearners,
+   (SELECT COUNT(*) FROM sa_onboarding_assignment WHERE project_id=#{projectId} AND status NOT IN ('PASSED','NEEDS_WORK','CANCELLED')) activeAssignments,
+   (SELECT COALESCE(SUM(status IN ('PASSED','NEEDS_WORK')) / NULLIF(COUNT(*),0),0)
+    FROM sa_onboarding_assignment WHERE project_id=#{projectId}) assignmentCompletionRate,
+   (SELECT COALESCE(AVG(passed),0) FROM (
+      SELECT CASE WHEN (SELECT ar.decision FROM sa_assessment_review ar WHERE ar.project_id=qa.project_id
+                    AND ar.target_type='QUIZ_ATTEMPT' AND ar.target_id=qa.id ORDER BY ar.id DESC LIMIT 1) IS NOT NULL
+                  THEN (SELECT ar.decision='PASS' FROM sa_assessment_review ar WHERE ar.project_id=qa.project_id
+                    AND ar.target_type='QUIZ_ATTEMPT' AND ar.target_id=qa.id ORDER BY ar.id DESC LIMIT 1)
+                  ELSE qa.final_score &gt;= q.pass_score END passed
+      FROM sa_quiz_attempt qa JOIN sa_quiz q ON q.id=qa.quiz_id
+      WHERE qa.project_id=#{projectId} AND qa.status='COMPLETED' AND qa.final_score IS NOT NULL
+      UNION ALL
+      SELECT CASE WHEN (SELECT ar.decision FROM sa_assessment_review ar WHERE ar.project_id=r.project_id
+                    AND ar.target_type='DRILL_RUN' AND ar.target_id=r.id ORDER BY ar.id DESC LIMIT 1) IS NOT NULL
+                  THEN (SELECT ar.decision='PASS' FROM sa_assessment_review ar WHERE ar.project_id=r.project_id
+                    AND ar.target_type='DRILL_RUN' AND ar.target_id=r.id ORDER BY ar.id DESC LIMIT 1)
+                  ELSE r.pass_candidate=1 AND r.final_score &gt;= s.pass_score END passed
+      FROM sa_drill_run r JOIN sa_drill_scenario s ON s.id=r.scenario_id
+      WHERE r.project_id=#{projectId} AND r.status='COMPLETED' AND r.final_score IS NOT NULL
+   ) results) assessmentPassRate,
+   (SELECT COUNT(*) FROM sa_content_dependency WHERE project_id=#{projectId} AND review_status='NEEDS_REVIEW') pendingKnowledgeReviews,
+   ((SELECT COUNT(*) FROM sa_quiz_attempt qa WHERE qa.project_id=#{projectId} AND qa.status='REVIEW_PENDING')
+      + (SELECT COUNT(*) FROM sa_drill_run r WHERE r.project_id=#{projectId} AND r.status='REVIEW_PENDING')
+      + (SELECT COUNT(*) FROM sa_onboarding_assignment a WHERE a.project_id=#{projectId} AND a.status='REVIEW_PENDING')) pendingAssessmentReviews,
+   0 knowledgeGapCount
+ </select>
+ <select id="assignments" resultType="map">
+  SELECT a.id assignmentId,a.path_id pathId,p.name pathName,a.path_version pathVersion,a.assignee_user_id assigneeUserId,
+   u.nickname assigneeName,a.status,a.progress,a.due_at dueAt,a.submitted_at submittedAt,
+   COALESCE(SUM(CASE WHEN t.required=1 THEN 1 ELSE 0 END),0) requiredTasks,
+   COALESCE(SUM(CASE WHEN t.required=1 AND t.status='COMPLETED' THEN 1 ELSE 0 END),0) completedRequiredTasks
+  FROM sa_onboarding_assignment a JOIN sa_onboarding_path p ON p.id=a.path_id JOIN sa_user u ON u.id=a.assignee_user_id
+  LEFT JOIN sa_onboarding_assignment_task t ON t.assignment_id=a.id WHERE a.project_id=#{projectId}
+  GROUP BY a.id ORDER BY a.update_time DESC,a.id DESC
+ </select>
+ <select id="knowledgeGaps" resultType="map">
+  WITH facts AS (
+   SELECT qq.knowledge_key,qa.user_id,IF(qq.type='SHORT','SHORT','QUIZ') metric,
+    IF(qq.type='SHORT',IF(ans.final_score&lt;qq.max_score*0.6,1,0),IF(ans.is_correct=0,1,0)) bad,0 risk
+   FROM sa_quiz_answer ans JOIN sa_quiz_attempt qa ON qa.id=ans.attempt_id JOIN sa_quiz q ON q.id=qa.quiz_id
+   JOIN sa_quiz_question qq ON qq.id=ans.question_id
+   WHERE qa.project_id=#{projectId} AND qa.status='COMPLETED' AND qq.knowledge_key IS NOT NULL
+   UNION ALL
+   SELECT rule.knowledge_key,r.user_id,'REQUIRED' metric,
+    IF(NOT EXISTS(SELECT 1 FROM sa_drill_run_action a WHERE a.run_id=r.id AND a.matched_rule_id=rule.id),1,0) bad,0 risk
+   FROM sa_drill_rule rule JOIN sa_drill_scenario s ON s.id=rule.scenario_id
+   JOIN sa_drill_run r ON r.scenario_id=s.id AND r.status='COMPLETED'
+   WHERE s.project_id=#{projectId} AND rule.knowledge_key IS NOT NULL AND rule.rule_type IN ('REQUIRED','VALIDATION')
+   UNION ALL
+   SELECT rule.knowledge_key,r.user_id,'RISKY' metric,0 bad,
+    IF(EXISTS(SELECT 1 FROM sa_drill_run_action a WHERE a.run_id=r.id AND a.matched_rule_id=rule.id AND a.risk_flag=1),1,0) risk
+   FROM sa_drill_rule rule JOIN sa_drill_scenario s ON s.id=rule.scenario_id
+   JOIN sa_drill_run r ON r.scenario_id=s.id AND r.status='COMPLETED'
+   WHERE s.project_id=#{projectId} AND rule.knowledge_key IS NOT NULL AND rule.rule_type='RISKY'
+  )
+  SELECT knowledge_key knowledgeKey,knowledge_key label,COUNT(DISTINCT user_id) participantCount,
+   SUM(metric='QUIZ' AND bad=1) quizWrong,SUM(metric='QUIZ') quizTotal,
+   SUM(metric='SHORT' AND bad=1) shortLow,SUM(metric='SHORT') shortTotal,
+   SUM(metric='REQUIRED' AND bad=1) drillMiss,SUM(metric='REQUIRED') drillRequired,
+   SUM(metric='RISKY' AND risk=1) riskHit,SUM(metric='RISKY') riskTotal
+  FROM facts GROUP BY knowledge_key HAVING SUM(bad)&gt;0 OR SUM(risk)&gt;0
+  ORDER BY (SUM(bad)+SUM(risk)) DESC,knowledge_key
+ </select>
+ <select id="knowledgeGapDocuments" resultType="map">
+  SELECT DISTINCT source.knowledgeKey,source.documentId FROM (
+   SELECT qq.knowledge_key knowledgeKey,cd.source_document_id documentId
+   FROM sa_content_dependency cd JOIN sa_quiz q ON cd.target_type='QUIZ' AND cd.target_id=q.id
+   JOIN sa_quiz_question qq ON qq.quiz_id=q.id
+   WHERE cd.project_id=#{projectId} AND cd.review_status='NEEDS_REVIEW' AND qq.knowledge_key IS NOT NULL
+   UNION
+   SELECT rule.knowledge_key knowledgeKey,cd.source_document_id documentId
+   FROM sa_content_dependency cd JOIN sa_drill_scenario s ON cd.target_type='DRILL' AND cd.target_id=s.id
+   JOIN sa_drill_rule rule ON rule.scenario_id=s.id
+   WHERE cd.project_id=#{projectId} AND cd.review_status='NEEDS_REVIEW' AND rule.knowledge_key IS NOT NULL
+  ) source ORDER BY source.knowledgeKey,source.documentId
+ </select>
+ <select id="pendingReviews" resultType="map">
+  SELECT 'QUIZ_ATTEMPT' targetType,qa.id targetId,qa.user_id userId,u.nickname userName,q.title,
+   qa.status,qa.auto_score automaticScore,qa.final_score finalScore,qa.submitted_at submittedAt
+  FROM sa_quiz_attempt qa JOIN sa_quiz q ON q.id=qa.quiz_id JOIN sa_user u ON u.id=qa.user_id
+  WHERE qa.project_id=#{projectId} AND qa.status='REVIEW_PENDING'
+  UNION ALL
+  SELECT 'DRILL_RUN',r.id,r.user_id,u.nickname,s.name,r.status,r.program_score,r.final_score,r.submitted_at
+  FROM sa_drill_run r JOIN sa_drill_scenario s ON s.id=r.scenario_id JOIN sa_user u ON u.id=r.user_id
+  WHERE r.project_id=#{projectId} AND r.status='REVIEW_PENDING'
+  UNION ALL
+  SELECT 'ASSIGNMENT',a.id,a.assignee_user_id,u.nickname,p.name,a.status,NULL,NULL,a.submitted_at
+  FROM sa_onboarding_assignment a JOIN sa_onboarding_path p ON p.id=a.path_id JOIN sa_user u ON u.id=a.assignee_user_id
+  WHERE a.project_id=#{projectId} AND a.status='REVIEW_PENDING'
+  ORDER BY submittedAt,targetType,targetId
+ </select>
+ <select id="contentImpact" resultType="map">
+  SELECT d.id dependencyId,d.target_type targetType,d.target_id targetId,d.review_status status,
+   d.source_document_id documentId,d.source_version_id documentVersionId,doc.title documentTitle,
+   d.detected_at detectedAt,d.confirmed_by confirmedBy,d.confirmed_at confirmedAt,d.note
+  FROM sa_content_dependency d JOIN sa_document doc ON doc.id=d.source_document_id
+  WHERE d.project_id=#{projectId} AND d.review_status=#{status}
+  <if test="targetType!=null">AND d.target_type=#{targetType}</if>
+  <if test="documentId!=null">AND d.source_document_id=#{documentId}</if>
+  ORDER BY d.detected_at DESC,d.id DESC
+ </select>
+</mapper>

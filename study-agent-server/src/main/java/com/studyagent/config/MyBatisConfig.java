@@ -15,7 +15,10 @@ import org.springframework.context.annotation.Configuration;
         "com.studyagent.plan.mapper",
         "com.studyagent.quiz.mapper",
         "com.studyagent.wrong.mapper",
-        "com.studyagent.file.mapper"
+        "com.studyagent.file.mapper",
+        "com.studyagent.project.mapper",
+        "com.studyagent.onboarding.mapper"
+        ,"com.studyagent.assessment.mapper"
 })
 public class MyBatisConfig {
 }

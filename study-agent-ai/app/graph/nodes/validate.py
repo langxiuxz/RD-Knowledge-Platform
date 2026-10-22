@@ -5,8 +5,9 @@ async def validate_input(state: AgentState) -> dict:
     content = state.get("content", "").strip()
     if not content:
         raise ValueError("content must not be blank")
-    if state.get("mode") == "RAG" and not state.get("knowledge_base_id"):
-        raise ValueError("knowledgeBaseId is required in RAG mode")
+    if state.get("mode") == "RAG" and not all(state.get(key) for key in
+            ("project_id", "knowledge_base_id", "knowledge_snapshot_id")):
+        raise ValueError("project, knowledge base, and snapshot are required in RAG mode")
     return {
         "content": content,
         "messages": [{"role": "user", "content": content}],

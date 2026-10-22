@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.document.mapper.DocumentVersionMapper">
+ <insert id="insert" useGeneratedKeys="true" keyProperty="id">INSERT INTO sa_document_version(document_id,project_id,knowledge_base_id,version_no,file_name,file_type,mime_type,file_size,content_hash,storage_key,process_status,publish_status,progress,chunk_count,current_task_id,change_note)
+ VALUES(#{documentId},#{projectId},#{knowledgeBaseId},#{versionNo},#{fileName},#{fileType},#{mimeType},#{fileSize},#{contentHash},#{storageKey},#{processStatus},#{publishStatus},#{progress},#{chunkCount},#{currentTaskId},#{changeNote})</insert>
+ <sql id="select">SELECT * FROM sa_document_version</sql>
+ <select id="findById" resultType="com.studyagent.document.entity.DocumentVersionEntity"><include refid="select"/> WHERE id=#{id}</select>
+ <select id="findByIdForUpdate" resultType="com.studyagent.document.entity.DocumentVersionEntity"><include refid="select"/> WHERE id=#{id} FOR UPDATE</select>
+ <select id="latestForUpdate" resultType="com.studyagent.document.entity.DocumentVersionEntity">SELECT * FROM sa_document_version WHERE document_id=#{documentId} ORDER BY version_no DESC LIMIT 1 FOR UPDATE</select>
+ <select id="findByDocumentId" resultType="com.studyagent.document.entity.DocumentVersionEntity"><include refid="select"/> WHERE document_id=#{documentId} ORDER BY version_no DESC</select>
+ <update id="startTask">UPDATE sa_document_version SET current_task_id=#{taskId},process_status='UPLOADED',publish_status='DRAFT',progress=0,chunk_count=0,error_message=NULL,content_hash=#{contentHash},update_time=CURRENT_TIMESTAMP WHERE id=#{id} AND current_task_id &lt;=> #{expectedTaskId} AND process_status='FAILED'</update>
+ <update id="updateProgress">UPDATE sa_document_version SET process_status=#{status},progress=#{progress},chunk_count=COALESCE(#{chunkCount},chunk_count),error_message=#{errorMessage},content_hash=COALESCE(#{contentHash},content_hash),update_time=CURRENT_TIMESTAMP WHERE id=#{id} AND current_task_id=#{taskId} AND process_status IN ('UPLOADED','PARSING','CHUNKING','EMBEDDING')</update>
+ <update id="submitReview">UPDATE sa_document_version SET publish_status='IN_REVIEW' WHERE id=#{id} AND process_status='READY' AND publish_status='DRAFT'</update>
+ <update id="review">UPDATE sa_document_version SET publish_status=CASE WHEN #{decision}='APPROVE' THEN 'APPROVED' ELSE 'REJECTED' END,reviewer_id=#{reviewerId},review_comment=#{comment},reviewed_at=CURRENT_TIMESTAMP WHERE id=#{id} AND publish_status='IN_REVIEW'</update>
+ <update id="publish">UPDATE sa_document_version SET publish_status='PUBLISHED',published_at=CURRENT_TIMESTAMP WHERE id=#{id} AND process_status='READY' AND publish_status='APPROVED'</update>
+ <update id="supersede">UPDATE sa_document_version SET publish_status='SUPERSEDED' WHERE id=#{id} AND publish_status='PUBLISHED'</update>
+ <update id="markDependencies">UPDATE sa_content_dependency SET review_status='NEEDS_REVIEW',detected_at=CURRENT_TIMESTAMP WHERE source_version_id=#{versionId} AND review_status IN ('CURRENT','CONFIRMED')</update>
+ <select id="existsByStorageKey" resultType="boolean">SELECT EXISTS(SELECT 1 FROM sa_document_version WHERE storage_key=#{storageKey})</select>
+ <update id="failStaleTasks">UPDATE sa_document_version SET process_status='FAILED',error_message=#{errorMessage},update_time=CURRENT_TIMESTAMP WHERE process_status IN ('UPLOADED','PARSING','CHUNKING','EMBEDDING') AND update_time&lt;TIMESTAMPADD(SECOND,-#{timeoutSeconds},CURRENT_TIMESTAMP) ORDER BY update_time,id LIMIT #{batchSize}</update>
+</mapper>

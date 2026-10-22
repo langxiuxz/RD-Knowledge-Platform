@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.insight.mapper.CapabilityReportMapper">
+ <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+  INSERT INTO sa_capability_report(project_id,assignment_id,user_id,report_version,status,knowledge_snapshot_id,path_version,
+   facts_json,dimensions_json,overall_decision,current_task_id)
+  VALUES(#{projectId},#{assignmentId},#{userId},#{reportVersion},'PROCESSING',#{knowledgeSnapshotId},#{pathVersion},
+   CAST(#{factsJson} AS JSON),CAST(#{dimensionsJson} AS JSON),#{overallDecision},#{currentTaskId})
+ </insert>
+ <select id="nextVersion" resultType="int">SELECT COALESCE(MAX(report_version),0)+1 FROM sa_capability_report WHERE assignment_id=#{assignmentId}</select>
+ <select id="latestForAssignment" resultType="com.studyagent.insight.entity.CapabilityReportEntity">SELECT * FROM sa_capability_report WHERE assignment_id=#{assignmentId} ORDER BY report_version DESC LIMIT 1</select>
+ <select id="find" resultType="com.studyagent.insight.entity.CapabilityReportEntity">SELECT * FROM sa_capability_report WHERE id=#{id}</select>
+ <select id="findForUpdate" resultType="com.studyagent.insight.entity.CapabilityReportEntity">SELECT * FROM sa_capability_report WHERE id=#{id} FOR UPDATE</select>
+ <update id="failStaleTask">UPDATE sa_capability_report SET status='FAILED',error_message=#{errorMessage},update_time=CURRENT_TIMESTAMP WHERE id=#{id} AND status='PROCESSING'</update>
+ <update id="complete">
+  UPDATE sa_capability_report SET status='READY',ai_summary=#{summary},
+   dimensions_json=JSON_SET(dimensions_json,'$.strengths',CAST(#{strengths} AS JSON)),
+   risks_json=CAST(#{risks} AS JSON),recommended_sources_json=CAST(#{sources} AS JSON),
+   model_name=#{modelName},generated_at=CURRENT_TIMESTAMP,error_message=NULL
+  WHERE id=#{id} AND current_task_id=#{taskId} AND status='PROCESSING'
+ </update>
+ <update id="fail">UPDATE sa_capability_report SET status='FAILED',error_message='能力报告生成失败，请重新发起',update_time=CURRENT_TIMESTAMP WHERE id=#{id} AND current_task_id=#{taskId} AND status='PROCESSING'</update>
+ <update id="failStale">UPDATE sa_capability_report SET status='FAILED',error_message=#{errorMessage},update_time=CURRENT_TIMESTAMP WHERE status='PROCESSING' AND update_time&lt;TIMESTAMPADD(SECOND,-#{timeoutSeconds},CURRENT_TIMESTAMP) ORDER BY update_time,id LIMIT #{batchSize}</update>
+ <select id="assignmentFacts" resultType="map">
+  SELECT a.id assignmentId,a.project_id projectId,a.assignee_user_id userId,a.path_id pathId,a.path_version pathVersion,
+   a.knowledge_snapshot_id knowledgeSnapshotId,a.status decisionStatus,a.progress,a.submitted_at submittedAt,a.due_at dueAt,
+   p.name pathName,p.target_role targetRole,p.description pathDescription
+  FROM sa_onboarding_assignment a JOIN sa_onboarding_path p ON p.id=a.path_id WHERE a.id=#{assignmentId}
+ </select>
+ <select id="assignmentFactsForUpdate" resultType="map">
+  SELECT a.id assignmentId,a.project_id projectId,a.assignee_user_id userId,a.path_id pathId,a.path_version pathVersion,
+   a.knowledge_snapshot_id knowledgeSnapshotId,a.status decisionStatus,a.progress,a.submitted_at submittedAt,a.due_at dueAt,
+   p.name pathName,p.target_role targetRole,p.description pathDescription
+  FROM sa_onboarding_assignment a JOIN sa_onboarding_path p ON p.id=a.path_id WHERE a.id=#{assignmentId} FOR UPDATE
+ </select>
+ <select id="taskFacts" resultType="map">SELECT id taskId,type,title,resource_type resourceType,resource_id resourceId,
+  prerequisite_task_ids_json dependencies,required,status,completion_note completionNote,completed_at completedAt
+  FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId} ORDER BY sort_order,id</select>
+ <select id="quizFacts" resultType="map">
+  SELECT qa.id attemptId,qa.quiz_id quizId,qa.status,qa.auto_score autoScore,qa.final_score finalScore,qa.review_required reviewRequired,
+   q.title,qa.rubric_version rubricVersion,qa.user_id userId,COUNT(ans.id) answerCount,
+   SUM(CASE WHEN qq.type&lt;&gt;'SHORT' AND ans.is_correct=0 THEN 1 ELSE 0 END) wrongCount,
+   SUM(CASE WHEN qq.type='SHORT' AND ans.final_score&lt;qq.max_score*0.6 THEN 1 ELSE 0 END) shortLowCount,
+   SUM(CASE WHEN ans.scoring_source='AI_SUGGESTION' THEN 1 ELSE 0 END) aiSuggestedCount
+  FROM sa_quiz_attempt qa JOIN sa_quiz q ON q.id=qa.quiz_id
+  LEFT JOIN sa_quiz_answer ans ON ans.attempt_id=qa.id LEFT JOIN sa_quiz_question qq ON qq.id=ans.question_id
+  WHERE qa.status IN ('REVIEW_PENDING','COMPLETED')
+   AND qa.project_id=(SELECT project_id FROM sa_onboarding_assignment WHERE id=#{assignmentId})
+   AND (qa.assignment_task_id IN (SELECT id FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId})
+    OR EXISTS(SELECT 1 FROM sa_onboarding_assignment_task t WHERE t.assignment_id=#{assignmentId} AND t.quiz_attempt_id=qa.id))
+  GROUP BY qa.id
+ </select>
+ <select id="drillFacts" resultType="map">
+  SELECT r.id runId,r.scenario_id scenarioId,r.status,r.program_score programScore,r.final_score finalScore,r.pass_candidate passCandidate,
+   r.rubric_version rubricVersion,r.user_id userId,s.name,
+   COALESCE(SUM(CASE WHEN a.risk_flag=1 THEN 1 ELSE 0 END),0) riskyActions,
+   (SELECT COUNT(*) FROM sa_drill_rule rule WHERE rule.scenario_id=s.id AND rule.rule_type IN ('REQUIRED','VALIDATION')
+    AND NOT EXISTS(SELECT 1 FROM sa_drill_run_action x WHERE x.run_id=r.id AND x.matched_rule_id=rule.id)) missingRequiredActions
+  FROM sa_drill_run r JOIN sa_drill_scenario s ON s.id=r.scenario_id LEFT JOIN sa_drill_run_action a ON a.run_id=r.id
+  WHERE r.status IN ('REVIEW_PENDING','COMPLETED')
+   AND r.project_id=(SELECT project_id FROM sa_onboarding_assignment WHERE id=#{assignmentId})
+   AND (r.assignment_task_id IN (SELECT id FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId})
+    OR EXISTS(SELECT 1 FROM sa_onboarding_assignment_task t WHERE t.assignment_id=#{assignmentId} AND t.drill_run_id=r.id))
+  GROUP BY r.id
+ </select>
+ <select id="reviewFacts" resultType="map">SELECT target_type targetType,target_id targetId,decision,score_override scoreOverride,comment,reviewer_id reviewerId,create_time createTime
+  FROM sa_assessment_review WHERE project_id=#{projectId} AND (target_type='ASSIGNMENT' AND target_id=#{assignmentId} OR
+   target_type='QUIZ_ATTEMPT' AND (target_id IN (SELECT quiz_attempt_id FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId}) OR target_id IN (SELECT id FROM sa_quiz_attempt WHERE assignment_task_id IN (SELECT id FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId}))) OR
+   target_type='DRILL_RUN' AND (target_id IN (SELECT drill_run_id FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId}) OR target_id IN (SELECT id FROM sa_drill_run WHERE assignment_task_id IN (SELECT id FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId})))) ORDER BY id</select>
+ <select id="snapshotSources" resultType="map">SELECT v.id documentVersionId,d.title title FROM sa_knowledge_snapshot_item i
+  JOIN sa_document_version v ON v.id=i.document_version_id JOIN sa_document d ON d.id=v.document_id
+  WHERE i.snapshot_id=#{snapshotId} ORDER BY i.id</select>
+</mapper>

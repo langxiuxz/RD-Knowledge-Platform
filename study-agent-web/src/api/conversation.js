@@ -1,6 +1,6 @@
 import request from './request'
 
-export const listConversations = (params) => request.get('/conversations', { params })
+export const listConversations = (projectId, params) => request.get(`/projects/${projectId}/conversations`, { params })
 export const createConversation = (payload) => request.post('/conversations', payload)
 export const getConversation = (id) => request.get(`/conversations/${id}`)
 export const updateConversation = (id, payload) => request.put(`/conversations/${id}`, payload)

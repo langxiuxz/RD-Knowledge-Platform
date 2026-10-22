@@ -20,7 +20,7 @@ class TaskRecoveryPropertiesTest {
         runner.run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(TaskRecoveryProperties.class)).isEqualTo(
-                    new TaskRecoveryProperties(true, Duration.ofMinutes(15), Duration.ofMinutes(5), 100));
+                    new TaskRecoveryProperties(true, Duration.ofMinutes(15), Duration.ofMinutes(5), Duration.ofMinutes(5), 100));
         });
     }
 
@@ -30,15 +30,17 @@ class TaskRecoveryPropertiesTest {
                 "app.task-recovery.enabled=${TASK_RECOVERY_ENABLED:true}",
                 "app.task-recovery.document-timeout=${TASK_RECOVERY_DOCUMENT_TIMEOUT:15m}",
                 "app.task-recovery.generation-timeout=${TASK_RECOVERY_GENERATION_TIMEOUT:5m}",
+                "app.task-recovery.report-timeout=${TASK_RECOVERY_REPORT_TIMEOUT:5m}",
                 "app.task-recovery.batch-size=${TASK_RECOVERY_BATCH_SIZE:100}")
                 .withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
                 new SystemEnvironmentPropertySource("systemEnvironment", Map.of(
                         "TASK_RECOVERY_ENABLED", "false",
                         "TASK_RECOVERY_DOCUMENT_TIMEOUT", "20m",
                         "TASK_RECOVERY_GENERATION_TIMEOUT", "2m",
+                        "TASK_RECOVERY_REPORT_TIMEOUT", "3m",
                         "TASK_RECOVERY_BATCH_SIZE", "10"))))
                 .run(context -> assertThat(context.getBean(TaskRecoveryProperties.class)).isEqualTo(
-                        new TaskRecoveryProperties(false, Duration.ofMinutes(20), Duration.ofMinutes(2), 10)));
+                        new TaskRecoveryProperties(false, Duration.ofMinutes(20), Duration.ofMinutes(2), Duration.ofMinutes(3), 10)));
     }
 
     @Test

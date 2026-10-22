@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     milvus_uri: str = Field(default="http://localhost:19530", pattern=r"^https?://")
     milvus_token: str = Field(default="", repr=False)
     milvus_db_name: str = Field(default="default", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=255)
-    milvus_collection: str = Field(default="study_agent_local_hash_v1", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=255)
+    milvus_collection: str = Field(default="study_agent_project_hash_v2", pattern=r"^[A-Za-z_][A-Za-z0-9_]*$", max_length=255)
     milvus_timeout: float = Field(default=10.0, gt=0, le=120)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

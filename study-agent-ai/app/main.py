@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import agent, health, plan, quiz, rag
+from app.api import agent, drill, health, plan, quiz, rag, report
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
@@ -26,4 +26,6 @@ app.include_router(health.router)
 app.include_router(agent.router)
 app.include_router(rag.router)
 app.include_router(quiz.router)
+app.include_router(drill.router)
 app.include_router(plan.router)
+app.include_router(report.router)

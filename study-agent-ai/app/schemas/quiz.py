@@ -6,14 +6,29 @@ QuestionType = Literal["SINGLE", "MULTIPLE", "JUDGE", "SHORT"]
 
 
 class QuizGenerateRequest(BaseModel):
-    user_id: int = Field(alias="userId", gt=0)
+    user_id: Optional[int] = Field(default=None, alias="userId", gt=0)
     topic: Optional[str] = Field(default=None, max_length=255)
     knowledge_base_id: Optional[int] = Field(default=None, alias="knowledgeBaseId", gt=0)
+    project_id: Optional[int] = Field(default=None, alias="projectId", gt=0)
+    knowledge_snapshot_id: Optional[int] = Field(default=None, alias="knowledgeSnapshotId", gt=0)
+    document_version_ids: Optional[List[int]] = Field(default=None, alias="documentVersionIds", max_length=10000)
     question_count: int = Field(alias="questionCount", ge=1, le=50)
     difficulty: Literal["EASY", "MEDIUM", "HARD"]
     types: List[QuestionType] = Field(min_length=1)
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def validate_scope(self):
+        v3_fields = (self.project_id, self.knowledge_snapshot_id, self.document_version_ids)
+        if any(value is not None for value in v3_fields):
+            if not all(value is not None for value in v3_fields) or not self.knowledge_base_id:
+                raise ValueError("V3 quiz generation requires project, knowledge base, snapshot and version ids")
+            if any(value <= 0 for value in self.document_version_ids):
+                raise ValueError("document version ids must be positive")
+        elif self.user_id is None:
+            raise ValueError("legacy quiz generation requires userId")
+        return self
 
 
 class QuizOption(BaseModel):
@@ -24,10 +39,14 @@ class QuizOption(BaseModel):
 class GeneratedQuestion(BaseModel):
     type: QuestionType
     topic: Optional[str] = Field(default=None, max_length=128)
+    knowledge_key: Optional[str] = Field(default=None, alias="knowledgeKey", max_length=128)
     content: str = Field(min_length=1)
     options: Optional[List[QuizOption]] = None
     answer: Union[str, List[str]]
     explanation: Optional[str] = None
+    source_refs: List[dict] = Field(default_factory=list, alias="sourceRefs", max_length=100)
+
+    model_config = {"populate_by_name": True}
 
     @model_validator(mode="after")
     def validate_question(self):

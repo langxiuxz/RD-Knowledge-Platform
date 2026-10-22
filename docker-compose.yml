@@ -102,7 +102,7 @@ services:
       MILVUS_URI: ${MILVUS_URI:-http://milvus:19530}
       MILVUS_TOKEN: ${MILVUS_TOKEN:-}
       MILVUS_DB_NAME: ${MILVUS_DB_NAME:-default}
-      MILVUS_COLLECTION: ${MILVUS_COLLECTION:-study_agent_local_hash_v1}
+      MILVUS_COLLECTION: ${MILVUS_COLLECTION:-study_agent_project_hash_v2}
       MILVUS_TIMEOUT: ${MILVUS_TIMEOUT:-10}
       LLM_PROVIDER: ${LLM_PROVIDER:-none}
       LLM_API_KEY: ${LLM_API_KEY:-}

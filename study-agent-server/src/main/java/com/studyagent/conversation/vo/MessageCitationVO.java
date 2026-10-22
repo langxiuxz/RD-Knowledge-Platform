@@ -1,4 +1,4 @@
 package com.studyagent.conversation.vo;
 
-public record MessageCitationVO(Long documentId, String chunkId, String fileName, Integer page, Double score) {
-}
+public record MessageCitationVO(Long documentId, String chunkId, String fileName, Integer page, Double score,
+                                Long documentVersionId, Long snapshotId) {}

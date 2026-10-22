@@ -35,6 +35,8 @@ async function setup() {
     }),
     stopGeneration: async (id, traceId) => { stops.push({ id, traceId }) },
     conversationApi: { listMessages: (...args) => loadHistory(...args) },
+    projectApi: { listProjects: async () => response({ rows: [] }) },
+    kbApi: { listKnowledgeBases: async () => response({ rows: [] }), listSnapshots: async () => response({ rows: [] }) },
     feedbackMessage: async () => {},
     ElMessage: Object.fromEntries(['error', 'warning', 'success', 'info'].map(type => [
       type, message => notices.push({ type, message })

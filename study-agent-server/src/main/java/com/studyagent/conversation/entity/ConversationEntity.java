@@ -28,4 +28,10 @@ public class ConversationEntity {
     public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
     public Long getMessageCount() { return messageCount; }
     public void setMessageCount(Long messageCount) { this.messageCount = messageCount; }
+    private Long projectId;
+    public Long getProjectId() { return projectId; }
+    public void setProjectId(Long value) { this.projectId = value; }
+    private Long knowledgeSnapshotId;
+    public Long getKnowledgeSnapshotId() { return knowledgeSnapshotId; }
+    public void setKnowledgeSnapshotId(Long value) { this.knowledgeSnapshotId = value; }
 }

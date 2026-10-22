@@ -1,136 +1,204 @@
 package com.studyagent.document.service;
 
-import com.studyagent.ai.client.AiClient;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.exception.ErrorCode;
 import com.studyagent.common.result.PageResult;
-import com.studyagent.config.AppProperties;
-import com.studyagent.document.dto.DocumentProgressRequest;
-import com.studyagent.document.dto.DocumentQuery;
-import com.studyagent.document.entity.DocumentEntity;
-import com.studyagent.document.mapper.DocumentMapper;
-import com.studyagent.document.vo.DocumentIdVO;
-import com.studyagent.document.vo.DocumentStatusVO;
-import com.studyagent.document.vo.DocumentTaskVO;
-import com.studyagent.document.vo.DocumentVO;
+import com.studyagent.document.dto.*;
+import com.studyagent.document.entity.*;
+import com.studyagent.document.mapper.*;
+import com.studyagent.document.vo.*;
 import com.studyagent.file.service.FileStorageService;
+import com.studyagent.knowledge.mapper.KnowledgeBaseMapper;
 import com.studyagent.knowledge.service.KnowledgeBaseService;
+import com.studyagent.project.entity.AuditLogEntity;
+import com.studyagent.project.mapper.AuditLogMapper;
+import com.studyagent.project.service.ProjectAccessService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Locale;
-import java.util.Set;
-import java.util.UUID;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.io.*;
+import java.security.MessageDigest;
+import java.util.*;
+import java.util.zip.*;
 
 @Service
 public class DocumentService {
     private static final long MAX_BYTES = 20L * 1024 * 1024;
     private static final Set<String> TYPES = Set.of("pdf", "docx", "txt", "md");
-    private static final Set<String> STATUSES = Set.of("UPLOADED", "PARSING", "CHUNKING", "EMBEDDING", "READY", "FAILED");
-    private final DocumentMapper mapper;
-    private final KnowledgeBaseService knowledgeBaseService;
-    private final FileStorageService fileStorageService;
-    private final AiClient aiClient;
-    private final AppProperties properties;
+    private final DocumentMapper documents;
+    private final DocumentVersionMapper versions;
+    private final KnowledgeBaseService knowledge;
+    private final KnowledgeBaseMapper bases;
+    private final FileStorageService storage;
+    private final DocumentIndexDispatcher dispatcher;
+    private final ProjectAccessService access;
+    private final AuditLogMapper audits;
 
-    public DocumentService(DocumentMapper mapper, KnowledgeBaseService knowledgeBaseService,
-                           FileStorageService fileStorageService, AiClient aiClient, AppProperties properties) {
-        this.mapper = mapper; this.knowledgeBaseService = knowledgeBaseService;
-        this.fileStorageService = fileStorageService; this.aiClient = aiClient; this.properties = properties;
+    public DocumentService(DocumentMapper documents, DocumentVersionMapper versions, KnowledgeBaseService knowledge,
+            KnowledgeBaseMapper bases, FileStorageService storage, DocumentIndexDispatcher dispatcher,
+            ProjectAccessService access, AuditLogMapper audits) {
+        this.documents=documents; this.versions=versions; this.knowledge=knowledge; this.bases=bases;
+        this.storage=storage; this.dispatcher=dispatcher; this.access=access; this.audits=audits;
     }
 
-    public DocumentIdVO upload(Long userId, Long knowledgeBaseId, MultipartFile file) {
-        knowledgeBaseService.requireOwned(userId, knowledgeBaseId);
+    @Transactional
+    public DocumentIdVO upload(Long userId, Long kbId, String title, String changeNote, MultipartFile file) {
+        var kb=knowledge.requireEditor(userId,kbId);
+        bases.lockById(kbId);
+        knowledge.requireEditor(userId,kbId);
         validateFile(file);
+        DocumentEntity document=new DocumentEntity();
+        document.setProjectId(kb.getProjectId()); document.setKnowledgeBaseId(kbId);
+        document.setCreatedBy(userId); document.setTitle(title); document.setStatus("ACTIVE");
+        documents.insert(document);
+        return storeVersion(document,1,changeNote,file);
+    }
+
+    @Transactional
+    public DocumentIdVO uploadVersion(Long userId, Long documentId, String changeNote, MultipartFile file) {
+        var initial=requireOwned(userId,documentId);
+        knowledge.requireEditor(userId,initial.getKnowledgeBaseId());
+        bases.lockById(initial.getKnowledgeBaseId());
+        knowledge.requireEditor(userId,initial.getKnowledgeBaseId());
+        var document=documents.findByIdForUpdate(documentId);
+        if (!"ACTIVE".equals(document.getStatus())) throw new BusinessException(ErrorCode.DOCUMENT_STATE_CONFLICT);
+        validateFile(file);
+        var latest=versions.latestForUpdate(documentId);
+        return storeVersion(document,latest==null?1:latest.getVersionNo()+1,changeNote,file);
+    }
+
+    private DocumentIdVO storeVersion(DocumentEntity document,int number,String note,MultipartFile file) {
         FileStorageService.StoredFile stored;
-        try { stored = fileStorageService.store(file); }
-        catch (IOException e) { throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件保存失败"); }
-        String taskId = newTaskId();
-        DocumentEntity entity = new DocumentEntity();
-        entity.setKnowledgeBaseId(knowledgeBaseId); entity.setUserId(userId);
-        entity.setFileName(stored.originalName()); entity.setFileType(typeOf(stored.originalName()));
-        entity.setMimeType(stored.contentType()); entity.setFileSize(stored.size()); entity.setStorageKey(stored.storageKey());
-        entity.setFileUrl(joinUrl(properties.storage().publicBaseUrl(), stored.storageKey()));
-        entity.setStatus("UPLOADED"); entity.setProgress(0); entity.setChunkCount(0); entity.setCurrentTaskId(taskId);
-        try { mapper.insert(entity); }
-        catch (RuntimeException e) { safeDelete(stored.storageKey()); throw e; }
-        dispatch(entity);
-        return new DocumentIdVO(entity.getId(), "PROCESSING");
-    }
-
-    public PageResult<DocumentVO> list(Long userId, Long knowledgeBaseId, DocumentQuery query) {
-        knowledgeBaseService.requireOwned(userId, knowledgeBaseId);
-        validateStatus(query.status());
-        long total = mapper.countByKnowledgeBaseAndUserId(knowledgeBaseId, userId, query.fileName(), query.status());
-        var rows = mapper.findPageByKnowledgeBaseAndUserId(knowledgeBaseId, userId, query.fileName(), query.status(),
-                (query.page() - 1) * query.pageSize(), query.pageSize()).stream().map(DocumentVO::from).toList();
-        return new PageResult<>(total, rows);
-    }
-
-    public DocumentStatusVO status(Long userId, Long documentId) { return DocumentStatusVO.from(requireOwned(userId, documentId)); }
-
-    public DocumentTaskVO reprocess(Long userId, Long documentId) {
-        DocumentEntity entity = requireOwned(userId, documentId);
-        if (!"FAILED".equals(entity.getStatus())) throw new BusinessException(ErrorCode.DOCUMENT_PROCESSING);
-        entity.setCurrentTaskId(newTaskId()); entity.setStatus("UPLOADED"); entity.setProgress(0); entity.setChunkCount(0);
-        if (mapper.updateTaskStart(entity) == 0) throw new BusinessException(ErrorCode.DOCUMENT_PROCESSING);
-        dispatch(entity);
-        return new DocumentTaskVO(entity.getCurrentTaskId(), "PROCESSING");
-    }
-
-    @Transactional
-    public void delete(Long userId, Long documentId) {
-        DocumentEntity entity = requireOwned(userId, documentId);
-        try { aiClient.deleteDocument(userId, entity.getKnowledgeBaseId(), documentId); }
-        catch (RuntimeException e) { throw new BusinessException(ErrorCode.VECTOR_DELETE_FAILED, "向量删除失败，请稍后重试"); }
-        try { fileStorageService.delete(entity.getStorageKey()); }
-        catch (IOException e) { throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件删除失败，请稍后重试"); }
-        mapper.deleteByIdAndUserId(documentId, userId);
-    }
-
-    @Transactional
-    public void progress(Long documentId, DocumentProgressRequest request) {
-        DocumentEntity current = mapper.findByIdForUpdate(documentId);
-        if (current == null) throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
-        if (!request.taskId().equals(current.getCurrentTaskId())) return;
-        if ("READY".equals(current.getStatus()) || "FAILED".equals(current.getStatus())) return;
-        validateProgress(current.getStatus(), current.getProgress(), request.status(), request.progress(), request.errorMessage());
-        boolean ready = "READY".equals(request.status());
-        int updated = mapper.updateProgressIfCurrentTask(documentId, request.taskId(), request.status(), request.progress(),
-                request.chunkCount(), request.errorMessage(), ready);
-        if (updated == 0) return;
-    }
-
-    public DocumentEntity requireOwned(Long userId, Long documentId) {
-        DocumentEntity e = mapper.findByIdAndUserId(documentId, userId);
-        if (e == null) throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
-        return e;
-    }
-
-    public org.springframework.core.io.Resource loadRegistered(String storageKey) {
-        if (!mapper.existsByStorageKey(storageKey)) throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
-        try { return fileStorageService.load(storageKey); }
-        catch (IOException e) { throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND); }
-    }
-
-    private void dispatch(DocumentEntity entity) {
-        try {
-            AiClient.IndexResponse response = aiClient.index(new AiClient.IndexRequest(entity.getUserId(), entity.getKnowledgeBaseId(),
-                    entity.getId(), entity.getCurrentTaskId(), entity.getFileUrl(), entity.getFileType(), entity.getFileName()));
-            if (response == null || response.taskId() == null || !entity.getCurrentTaskId().equals(response.taskId()))
-                throw new IllegalStateException("AI task was not accepted");
-        } catch (RuntimeException e) {
-            mapper.updateProgressIfCurrentTask(entity.getId(), entity.getCurrentTaskId(), "FAILED", 0, 0,
-                    "AI服务未接受文档处理任务", false);
+        String hash;
+        try (InputStream input=file.getInputStream()) { hash=hash(input); stored=storage.store(file); }
+        catch (IOException e) { throw new BusinessException(ErrorCode.INTERNAL_ERROR,"文件保存失败"); }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCompletion(int status) { if (status!=STATUS_COMMITTED) safeDelete(stored.storageKey()); }
+            });
         }
+        DocumentVersionEntity v=new DocumentVersionEntity();
+        v.setDocumentId(document.getId()); v.setProjectId(document.getProjectId()); v.setKnowledgeBaseId(document.getKnowledgeBaseId());
+        v.setVersionNo(number); v.setFileName(stored.originalName()); v.setFileType(typeOf(stored.originalName()));
+        v.setMimeType(stored.contentType()); v.setFileSize(stored.size()); v.setContentHash(hash); v.setStorageKey(stored.storageKey());
+        v.setProcessStatus("UPLOADED"); v.setPublishStatus("DRAFT"); v.setProgress(0); v.setChunkCount(0);
+        v.setCurrentTaskId(newTaskId()); v.setChangeNote(note);
+        try { versions.insert(v); documents.touch(document.getId()); }
+        catch (RuntimeException e) { safeDelete(stored.storageKey()); throw e; }
+        afterCommit(v);
+        return new DocumentIdVO(document.getId(),v.getId(),number,"UPLOADED",v.getCurrentTaskId());
     }
 
+    public PageResult<DocumentVO> list(Long userId,Long kbId,DocumentQuery q) {
+        var kb=knowledge.requireMember(userId,kbId);
+        boolean learner="LEARNER".equals(access.requireMember(userId,kb.getProjectId()).getMyRole());
+        if (q.status()!=null&&!Set.of("ACTIVE","ARCHIVED").contains(q.status())) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        var rows=documents.findPage(kbId,q.keyword(),q.status(),(long)(q.page()-1)*q.pageSize(),q.pageSize(),learner)
+                .stream().map(DocumentVO::from).toList();
+        return new PageResult<>(documents.count(kbId,q.keyword(),q.status(),learner),rows);
+    }
+
+    public DocumentDetailVO get(Long userId,Long id) {
+        var doc=requireOwned(userId,id);
+        boolean learner=isLearner(userId,doc.getProjectId());
+        var visible=versions.findByDocumentId(id).stream().filter(v->!learner||published(v)).map(DocumentVersionVO::from).toList();
+        if (learner && visible.isEmpty()) throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
+        return new DocumentDetailVO(DocumentVO.from(doc),visible);
+    }
+
+    public DocumentVersionVO version(Long userId,Long id) { return DocumentVersionVO.from(requireVersion(userId,id,false)); }
+    public DocumentStatusVO status(Long userId,Long id) { return DocumentStatusVO.from(requireVersion(userId,id,false)); }
+
+    @Transactional
+    public DocumentTaskVO reprocess(Long userId,Long id) {
+        var v=requireVersion(userId,id,true);
+        if (!"FAILED".equals(v.getProcessStatus())) throw new BusinessException(ErrorCode.DOCUMENT_PROCESSING);
+        String hash;
+        try (InputStream input=storage.load(v.getStorageKey()).getInputStream()) { hash=hash(input); }
+        catch (IOException e) { throw new BusinessException(ErrorCode.FILE_NOT_FOUND); }
+        String taskId=newTaskId();
+        if (versions.startTask(id,v.getCurrentTaskId(),taskId,hash)!=1) throw new BusinessException(ErrorCode.DOCUMENT_PROCESSING);
+        v.setCurrentTaskId(taskId); v.setContentHash(hash); afterCommit(v);
+        return new DocumentTaskVO(taskId,"PROCESSING");
+    }
+
+    @Transactional
+    public void submitReview(Long userId,Long id) {
+        requireVersion(userId,id,true);
+        if (versions.submitReview(id)!=1) throw new BusinessException(ErrorCode.DOCUMENT_STATE_CONFLICT);
+    }
+
+    @Transactional
+    public void review(Long userId,Long id,ReviewVersionRequest request) {
+        var v=requireVersion(userId,id,true);
+        if (versions.review(id,request.decision(),userId,request.comment())!=1) throw new BusinessException(ErrorCode.DOCUMENT_STATE_CONFLICT);
+        AuditLogEntity audit=new AuditLogEntity(); audit.setProjectId(v.getProjectId()); audit.setActorUserId(userId);
+        audit.setAction("KNOWLEDGE_VERSION_REVIEWED"); audit.setResourceType("DOCUMENT_VERSION"); audit.setResourceId(id);
+        audits.insert(audit);
+    }
+
+    @Transactional
+    public void archive(Long userId,Long id) {
+        var doc=requireOwned(userId,id); knowledge.requireEditor(userId,doc.getKnowledgeBaseId());
+        bases.lockById(doc.getKnowledgeBaseId()); documents.archive(id);
+    }
+
+    @Transactional
+    public void progress(Long versionId,DocumentProgressRequest request) {
+        var v=versions.findByIdForUpdate(versionId);
+        if (v==null) throw new BusinessException(ErrorCode.DOCUMENT_VERSION_NOT_FOUND);
+        if (!Objects.equals(v.getCurrentTaskId(),request.taskId()) || Set.of("READY","FAILED").contains(v.getProcessStatus())) return;
+        String next=request.status();
+        List<String> stages=List.of("UPLOADED","PARSING","CHUNKING","EMBEDDING","READY");
+        int current=stages.indexOf(v.getProcessStatus()), target=stages.indexOf(next);
+        if (!"FAILED".equals(next) && target<current) return; // delayed duplicate delivery
+        if (!"FAILED".equals(next) && (target<0 || target>current+1)) throw new BusinessException(ErrorCode.VALIDATION_FAILED,"非法文档状态迁移");
+        if (request.progress()==null || request.progress()<0 || request.progress()>100) throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        if (!"FAILED".equals(next) && request.progress()<v.getProgress()) return;
+        if ("READY".equals(next) && request.progress()!=100) throw new BusinessException(ErrorCode.VALIDATION_FAILED,"READY必须为100");
+        if ("FAILED".equals(next) && (request.errorMessage()==null || request.errorMessage().isBlank())) throw new BusinessException(ErrorCode.VALIDATION_FAILED,"FAILED必须有错误信息");
+        versions.updateProgress(versionId,request.taskId(),next,"FAILED".equals(next)?v.getProgress():request.progress(),request.chunkCount(),request.errorMessage(),null,"READY".equals(next));
+    }
+
+    public DocumentEntity requireOwned(Long userId,Long id) {
+        var doc=documents.findById(id);
+        if (doc==null) throw new BusinessException(ErrorCode.DOCUMENT_NOT_FOUND);
+        access.requireMember(userId,doc.getProjectId()); return doc;
+    }
+
+    private DocumentVersionEntity requireVersion(Long userId,Long id,boolean editor) {
+        var v=versions.findById(id);
+        if (v==null) throw new BusinessException(ErrorCode.DOCUMENT_VERSION_NOT_FOUND);
+        if (editor) {
+            knowledge.requireEditor(userId,v.getKnowledgeBaseId());
+            var doc=documents.findById(v.getDocumentId());
+            if (!"ACTIVE".equals(doc.getStatus())) throw new BusinessException(ErrorCode.DOCUMENT_STATE_CONFLICT);
+        } else if (isLearner(userId,v.getProjectId())&&!published(v)) throw new BusinessException(ErrorCode.DOCUMENT_VERSION_NOT_FOUND);
+        return v;
+    }
+    private boolean isLearner(Long userId,Long projectId) { return "LEARNER".equals(access.requireMember(userId,projectId).getMyRole()); }
+    private boolean published(DocumentVersionEntity v) { return Set.of("PUBLISHED","SUPERSEDED").contains(v.getPublishStatus()); }
+    public org.springframework.core.io.Resource loadRegistered(String key) {
+        if (!versions.existsByStorageKey(key)) throw new BusinessException(ErrorCode.FILE_NOT_FOUND);
+        try { return storage.load(key); } catch (IOException e) { throw new BusinessException(ErrorCode.FILE_NOT_FOUND); }
+    }
+    private void afterCommit(DocumentVersionEntity v) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { dispatcher.dispatch(v); }
+            });
+        } else dispatcher.dispatch(v);
+    }
+    private String hash(InputStream input) throws IOException {
+        try { MessageDigest digest=MessageDigest.getInstance("SHA-256"); byte[] buffer=new byte[8192]; int count;
+            while ((count=input.read(buffer))!=-1) digest.update(buffer,0,count);
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
+    }
+    private void safeDelete(String key) { try { storage.delete(key); } catch (IOException ignored) {} }
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) throw new BusinessException(ErrorCode.FILE_INVALID, "文件不能为空");
         if (file.getSize() > MAX_BYTES) throw new BusinessException(ErrorCode.FILE_TOO_LARGE);
@@ -202,20 +270,4 @@ public class DocumentService {
     private String typeOf(String name) { String ext = StringUtils.getFilenameExtension(name); return ext == null ? "" : ext.toLowerCase(Locale.ROOT); }
     private String newTaskId() { return "task_" + UUID.randomUUID().toString().replace("-", ""); }
     private String joinUrl(String base, String key) { return base.endsWith("/") ? base + key : base + "/" + key; }
-    private void validateStatus(String status) { if (status != null && !STATUSES.contains(status)) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "status不合法"); }
-    private void validateProgress(String current, Integer currentProgress, String next, Integer progress, String error) {
-        if (progress == null) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "progress不能为空");
-        if (!STATUSES.contains(next)) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "status不合法");
-        if (!"FAILED".equals(next) && currentProgress != null && progress < currentProgress)
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "progress不能回退");
-        if ("READY".equals(next) && progress != 100) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "READY必须为100");
-        if ("FAILED".equals(next) && (error == null || error.isBlank())) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "FAILED必须有错误信息");
-        boolean allowed = next.equals(current) || ("UPLOADED".equals(current) && "PARSING".equals(next))
-                || ("PARSING".equals(current) && "CHUNKING".equals(next))
-                || ("CHUNKING".equals(current) && "EMBEDDING".equals(next))
-                || ("EMBEDDING".equals(current) && "READY".equals(next))
-                || (!"READY".equals(current) && "FAILED".equals(next));
-        if (!allowed) throw new BusinessException(ErrorCode.VALIDATION_FAILED, "非法文档状态迁移");
-    }
-    private void safeDelete(String key) { try { fileStorageService.delete(key); } catch (IOException ignored) { } }
 }

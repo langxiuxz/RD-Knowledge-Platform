@@ -13,6 +13,10 @@ public interface UserMapper {
     UserEntity findByUsername(@Param("username") String username);
 
     @Select("SELECT id, username, password_hash, nickname, email, avatar, status, create_time, update_time "
+            + "FROM sa_user WHERE username = #{username} AND status = 'ACTIVE'")
+    UserEntity findActiveByUsername(@Param("username") String username);
+
+    @Select("SELECT id, username, password_hash, nickname, email, avatar, status, create_time, update_time "
             + "FROM sa_user WHERE id = #{id}")
     UserEntity findById(@Param("id") Long id);
 

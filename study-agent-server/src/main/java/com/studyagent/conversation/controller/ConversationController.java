@@ -33,7 +33,6 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 @Validated
 @RestController
-@RequestMapping("/api/conversations")
 public class ConversationController {
     private final ConversationService service;
     private final ChatService chatService;
@@ -43,51 +42,51 @@ public class ConversationController {
         this.chatService = chatService;
     }
 
-    @PostMapping
+    @PostMapping("/api/conversations")
     public Result<ConversationIdVO> create(@Valid @RequestBody CreateConversationRequest request) {
         return Result.success(service.create(CurrentUser.requireId(), request));
     }
 
-    @GetMapping
-    public Result<PageResult<ConversationVO>> list(
+    @GetMapping("/api/projects/{projectId}/conversations")
+    public Result<PageResult<ConversationVO>> list(@PathVariable @Positive Long projectId,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String mode,
             @RequestParam(defaultValue = "1") @Min(1) Integer page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) Integer pageSize) {
-        return Result.success(service.list(CurrentUser.requireId(), new ConversationQuery(keyword, mode, page, pageSize)));
+        return Result.success(service.list(CurrentUser.requireId(), projectId, new ConversationQuery(keyword, mode, page, pageSize)));
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/api/conversations/{id}")
     public Result<ConversationVO> get(@PathVariable @Positive Long id) {
         return Result.success(service.get(CurrentUser.requireId(), id));
     }
 
-    @PutMapping("/{id}")
+    @PutMapping("/api/conversations/{id}")
     public Result<Void> update(@PathVariable @Positive Long id, @Valid @RequestBody UpdateConversationRequest request) {
         service.update(CurrentUser.requireId(), id, request);
         return Result.success();
     }
 
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/api/conversations/{id}")
     public Result<Void> delete(@PathVariable @Positive Long id) {
         service.delete(CurrentUser.requireId(), id);
         return Result.success();
     }
 
-    @GetMapping("/{id}/messages")
+    @GetMapping("/api/conversations/{id}/messages")
     public Result<MessagePageVO> messages(@PathVariable @Positive Long id,
                                           @RequestParam(required = false) @Positive Long beforeId,
                                           @RequestParam(defaultValue = "20") @Min(1) @Max(100) Integer pageSize) {
         return Result.success(service.messages(CurrentUser.requireId(), id, beforeId, pageSize));
     }
 
-    @PostMapping("/{id}/messages")
+    @PostMapping("/api/conversations/{id}/messages")
     public Result<SendMessageVO> send(@PathVariable @Positive Long id,
                                       @Valid @RequestBody SendMessageRequest request) {
         return Result.success(chatService.send(CurrentUser.requireId(), id, request));
     }
 
-    @PostMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @PostMapping(value = "/api/conversations/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<StreamingResponseBody> stream(@PathVariable @Positive Long id,
                                                          @Valid @RequestBody SendMessageRequest request) {
         return ResponseEntity.ok()
@@ -96,7 +95,7 @@ public class ConversationController {
                 .body(chatService.stream(CurrentUser.requireId(), id, request));
     }
 
-    @DeleteMapping("/{id}/generation/{traceId}")
+    @DeleteMapping("/api/conversations/{id}/generation/{traceId}")
     public Result<Void> stop(@PathVariable @Positive Long id, @PathVariable String traceId) {
         chatService.stop(CurrentUser.requireId(), id, traceId);
         return Result.success();

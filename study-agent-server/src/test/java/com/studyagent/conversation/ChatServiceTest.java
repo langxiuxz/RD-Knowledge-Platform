@@ -10,6 +10,7 @@ import com.studyagent.conversation.service.ConversationService;
 import com.studyagent.conversation.service.MessagePersistenceService;
 import com.studyagent.conversation.vo.SendMessageVO;
 import com.studyagent.generation.service.GenerationStateService;
+import com.studyagent.knowledge.vo.KnowledgeSnapshotVOs.RagScope;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -41,7 +42,8 @@ class ChatServiceTest {
     void send_withRag_shouldPersistAnswerAndCitation() {
         ChatService service = service();
         ConversationEntity conversation = conversation(301L, 10L, "CHAT");
-        AiClient.Citation citation = new AiClient.Citation("chunk-1", 101L, "notes.pdf", 12, 0.91);
+        mockRagScope(conversation);
+        AiClient.Citation citation = new AiClient.Citation("chunk-1", 101L, "notes.pdf", 12, 0.91, 1001L, 501L);
         when(conversationService.requireOwned(1L, 301L)).thenReturn(conversation);
         when(persistenceService.createExchange(1L, 301L, "question"))
                 .thenReturn(new MessagePersistenceService.MessageExchange(9000L, 9001L));
@@ -65,7 +67,9 @@ class ChatServiceTest {
     @Test
     void send_withToolsAndKnowledgeBase_shouldUseAgentWithOwnedKnowledgeBase() {
         ChatService service = service();
-        when(conversationService.requireOwned(1L, 301L)).thenReturn(conversation(301L, 10L, "CHAT"));
+        ConversationEntity conversation = conversation(301L, 10L, "CHAT");
+        mockRagScope(conversation);
+        when(conversationService.requireOwned(1L, 301L)).thenReturn(conversation);
         when(persistenceService.createExchange(1L, 301L, "plan"))
                 .thenReturn(new MessagePersistenceService.MessageExchange(9000L, 9001L));
         when(aiClient.invoke(any())).thenReturn(
@@ -105,7 +109,9 @@ class ChatServiceTest {
     @Test
     void stream_whenDone_shouldRelayEventsAndPersistOnce() throws Exception {
         ChatService service = service();
-        when(conversationService.requireOwned(1L, 301L)).thenReturn(conversation(301L, 10L, "CHAT"));
+        ConversationEntity conversation = conversation(301L, 10L, "RAG");
+        mockRagScope(conversation);
+        when(conversationService.requireOwned(1L, 301L)).thenReturn(conversation);
         when(persistenceService.createExchange(1L, 301L, "hello"))
                 .thenReturn(new MessagePersistenceService.MessageExchange(9000L, 9001L));
         doAnswer(invocation -> {
@@ -115,7 +121,7 @@ class ChatServiceTest {
             consumer.accept(new AiClient.StreamEvent("token", "{\"content\":\"hello \"}"));
             consumer.accept(new AiClient.StreamEvent("token", "{\"content\":\"world\"}"));
             consumer.accept(new AiClient.StreamEvent("citation",
-                    "{\"chunkId\":\"chunk-2\",\"documentId\":102,\"fileName\":\"guide.pdf\",\"page\":3,\"score\":0.8}"));
+                    "{\"chunkId\":\"chunk-2\",\"documentId\":102,\"fileName\":\"guide.pdf\",\"page\":3,\"score\":0.8,\"documentVersionId\":1002,\"knowledgeSnapshotId\":501}"));
             consumer.accept(new AiClient.StreamEvent("done", "{\"traceId\":\"trace-2\",\"finishReason\":\"stop\"}"));
             return null;
         }).when(aiClient).stream(any(), any());
@@ -125,7 +131,8 @@ class ChatServiceTest {
 
         String body = output.toString(StandardCharsets.UTF_8);
         assertThat(body).contains("event: start", "\"messageId\":9001", "event: token",
-                "event: citation", "event: done");
+                "event: citation", "\"snapshotId\":501", "event: done");
+        assertThat(body).doesNotContain("knowledgeSnapshotId");
         verify(persistenceService).bindTrace(9001L, 1L, "trace-2");
         verify(generationStateService).start("trace-2", 1L, 301L);
         ArgumentCaptor<List<AiClient.Citation>> citations = citationListCaptor();
@@ -174,8 +181,16 @@ class ChatServiceTest {
         conversation.setId(id);
         conversation.setUserId(1L);
         conversation.setKnowledgeBaseId(knowledgeBaseId);
+        conversation.setProjectId(20L);
+        conversation.setKnowledgeSnapshotId(knowledgeBaseId == null ? null : 501L);
         conversation.setMode(mode);
         return conversation;
+    }
+
+    private void mockRagScope(ConversationEntity conversation) {
+        when(conversationService.scope(1L, conversation)).thenReturn(
+                new RagScope(conversation.getProjectId(), conversation.getKnowledgeBaseId(),
+                        conversation.getKnowledgeSnapshotId(), List.of(1001L, 1002L)));
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

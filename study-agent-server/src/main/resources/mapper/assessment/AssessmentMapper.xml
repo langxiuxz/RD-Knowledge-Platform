@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.assessment.mapper.AssessmentMapper">
+ <insert id="insertQuiz" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+  INSERT INTO sa_quiz(project_id,knowledge_snapshot_id,version_no,title,topic,difficulty,question_count,types_json,status,rubric_version,rubric_json,pass_score,current_task_id,created_by)
+  VALUES(#{projectId},#{knowledgeSnapshotId},#{versionNo},#{title},#{topic},#{difficulty},#{questionCount},CAST(#{typesJson} AS JSON),'GENERATING',#{rubricVersion},CAST(#{rubricJson} AS JSON),#{passScore},#{currentTaskId},#{createdBy})
+ </insert>
+ <update id="updateQuizStatus">
+  UPDATE sa_quiz SET status=#{to},current_task_id=IF(#{to}='GENERATING',#{taskId},current_task_id),error_message=#{error}
+  WHERE id=#{id} AND status=#{from} AND current_task_id=#{taskId}
+ </update>
+ <insert id="insertQuestions">INSERT INTO sa_quiz_question(quiz_id,knowledge_key,type,content,options_json,correct_answer_json,explanation,source_refs_json,max_score,sort_order) VALUES
+  <foreach collection="questions" item="q" separator=",">(#{q.quizId},#{q.knowledgeKey},#{q.type},#{q.content},CAST(#{q.optionsJson} AS JSON),CAST(#{q.correctAnswerJson} AS JSON),#{q.explanation},CAST(#{q.sourceRefsJson} AS JSON),#{q.maxScore},#{q.sortOrder})</foreach>
+ </insert>
+ <select id="quizzes" resultType="com.studyagent.assessment.entity.ProjectQuizEntity">SELECT * FROM sa_quiz WHERE project_id=#{projectId}<if test="keyword!=null and keyword!=''"> AND title LIKE CONCAT('%',#{keyword},'%')</if><if test="status!=null"> AND status=#{status}</if> ORDER BY update_time DESC,id DESC LIMIT #{offset},#{limit}</select>
+ <select id="countQuizzes" resultType="long">SELECT COUNT(*) FROM sa_quiz WHERE project_id=#{projectId}<if test="keyword!=null and keyword!=''"> AND title LIKE CONCAT('%',#{keyword},'%')</if><if test="status!=null"> AND status=#{status}</if></select>
+ <select id="quiz" resultType="com.studyagent.assessment.entity.ProjectQuizEntity">SELECT * FROM sa_quiz WHERE id=#{id} AND project_id IS NOT NULL</select>
+ <select id="lockQuiz" resultType="com.studyagent.assessment.entity.ProjectQuizEntity">SELECT * FROM sa_quiz WHERE id=#{id} AND project_id IS NOT NULL FOR UPDATE</select>
+ <select id="questions" resultType="com.studyagent.assessment.entity.AssessmentQuestionEntity">SELECT * FROM sa_quiz_question WHERE quiz_id=#{quizId} ORDER BY sort_order,id</select>
+ <select id="question" resultType="com.studyagent.assessment.entity.AssessmentQuestionEntity">SELECT q.* FROM sa_quiz_question q JOIN sa_quiz z ON z.id=q.quiz_id WHERE q.id=#{id} AND z.project_id IS NOT NULL</select>
+ <update id="updateQuestion">UPDATE sa_quiz_question q JOIN sa_quiz z ON z.id=q.quiz_id SET q.knowledge_key=#{knowledgeKey},q.content=#{content},q.options_json=CAST(#{optionsJson} AS JSON),q.correct_answer_json=CAST(#{correctAnswerJson} AS JSON),q.explanation=#{explanation},q.source_refs_json=CAST(#{sourceRefsJson} AS JSON),q.max_score=#{maxScore} WHERE q.id=#{id} AND z.status IN ('DRAFT','READY')</update>
+ <update id="publishQuiz">UPDATE sa_quiz SET status='PUBLISHED',published_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status IN ('DRAFT','READY')</update>
+ <insert id="insertContentDependency">
+  INSERT INTO sa_content_dependency(project_id,source_document_id,source_version_id,target_type,target_id,review_status)
+  SELECT #{projectId},v.document_id,v.id,#{targetType},#{targetId},IF(d.current_published_version_id=v.id,'CURRENT','NEEDS_REVIEW')
+  FROM sa_document_version v JOIN sa_document d ON d.id=v.document_id WHERE v.id=#{versionId} AND v.project_id=#{projectId}
+  ON DUPLICATE KEY UPDATE review_status=review_status
+ </insert>
+ <select id="unresolvedDependencies" resultType="long">SELECT COUNT(*) FROM sa_content_dependency WHERE target_type=#{targetType} AND target_id=#{targetId} AND review_status='NEEDS_REVIEW'</select>
+ <insert id="insertAttempt" useGeneratedKeys="true" keyProperty="id" keyColumn="id">INSERT INTO sa_quiz_attempt(project_id,quiz_id,user_id,assignment_task_id,status,rubric_version) VALUES(#{projectId},#{quizId},#{userId},#{assignmentTaskId},'IN_PROGRESS',#{rubricVersion})</insert>
+ <select id="lockAttempt" resultType="com.studyagent.assessment.entity.QuizAttemptEntity">SELECT * FROM sa_quiz_attempt WHERE id=#{id} FOR UPDATE</select>
+ <select id="attempt" resultType="com.studyagent.assessment.entity.QuizAttemptEntity">SELECT * FROM sa_quiz_attempt WHERE id=#{id}</select>
+ <insert id="insertAnswers">INSERT INTO sa_quiz_answer(attempt_id,question_id,user_answer_json,rule_score,ai_suggested_score,final_score,is_correct,scoring_source,ai_feedback,source_refs_json) VALUES
+  <foreach collection="answers" item="a" separator=",">(#{a.attemptId},#{a.questionId},CAST(#{a.userAnswerJson} AS JSON),#{a.ruleScore},#{a.aiSuggestedScore},#{a.finalScore},#{a.isCorrect},#{a.scoringSource},#{a.aiFeedback},CAST(#{a.sourceRefsJson} AS JSON))</foreach>
+ </insert>
+ <select id="answers" resultType="com.studyagent.assessment.entity.AssessmentAnswerEntity">SELECT * FROM sa_quiz_answer WHERE attempt_id=#{attemptId} ORDER BY id</select>
+ <update id="completeAttempt">UPDATE sa_quiz_attempt SET status=#{status},auto_score=#{autoScore},final_score=#{finalScore},correct_count=#{correctCount},review_required=#{reviewRequired},submitted_at=CURRENT_TIMESTAMP,completed_at=#{completedAt} WHERE id=#{id} AND status='IN_PROGRESS'</update>
+ <insert id="insertScenario" useGeneratedKeys="true" keyProperty="id" keyColumn="id">INSERT INTO sa_drill_scenario(project_id,knowledge_snapshot_id,version_no,name,description,severity,initial_symptom,status,rubric_version,rubric_json,pass_score,created_by) VALUES(#{projectId},#{knowledgeSnapshotId},1,#{name},#{description},#{severity},#{initialSymptom},'DRAFT',#{rubricVersion},CAST(#{rubricJson} AS JSON),#{passScore},#{createdBy})</insert>
+ <insert id="insertRules">INSERT INTO sa_drill_rule(scenario_id,code,knowledge_key,title,rule_type,aliases_json,sequence_group,min_order,points,sort_order) VALUES<foreach collection="rules" item="r" separator=",">(#{r.scenarioId},#{r.code},#{r.knowledgeKey},#{r.title},#{r.ruleType},CAST(#{r.aliasesJson} AS JSON),#{r.sequenceGroup},#{r.minOrder},#{r.points},#{r.sortOrder})</foreach></insert>
+ <insert id="insertEvidence">INSERT INTO sa_drill_evidence(scenario_id,code,evidence_type,title,content,unlock_rule_code,sort_order) VALUES<foreach collection="evidence" item="e" separator=",">(#{e.scenarioId},#{e.code},#{e.evidenceType},#{e.title},#{e.content},#{e.unlockRuleCode},#{e.sortOrder})</foreach></insert>
+ <select id="scenarios" resultType="com.studyagent.assessment.entity.DrillScenarioEntity">SELECT * FROM sa_drill_scenario WHERE project_id=#{projectId}<if test="status!=null"> AND status=#{status}</if> ORDER BY update_time DESC,id DESC</select>
+ <select id="scenario" resultType="com.studyagent.assessment.entity.DrillScenarioEntity">SELECT * FROM sa_drill_scenario WHERE id=#{id}</select>
+ <select id="lockScenario" resultType="com.studyagent.assessment.entity.DrillScenarioEntity">SELECT * FROM sa_drill_scenario WHERE id=#{id} FOR UPDATE</select>
+ <update id="updateScenario">UPDATE sa_drill_scenario SET knowledge_snapshot_id=#{knowledgeSnapshotId},name=#{name},description=#{description},severity=#{severity},initial_symptom=#{initialSymptom},rubric_json=CAST(#{rubricJson} AS JSON),pass_score=#{passScore} WHERE id=#{id} AND status='DRAFT'</update>
+ <delete id="deleteRules">DELETE FROM sa_drill_rule WHERE scenario_id=#{scenarioId}</delete>
+ <delete id="deleteEvidence">DELETE FROM sa_drill_evidence WHERE scenario_id=#{scenarioId}</delete>
+ <select id="rules" resultType="com.studyagent.assessment.entity.DrillRuleEntity">SELECT * FROM sa_drill_rule WHERE scenario_id=#{scenarioId} ORDER BY sort_order,id</select>
+ <select id="evidence" resultType="com.studyagent.assessment.entity.DrillEvidenceEntity">SELECT * FROM sa_drill_evidence WHERE scenario_id=#{scenarioId} ORDER BY sort_order,id</select>
+ <update id="publishScenario">UPDATE sa_drill_scenario SET status='PUBLISHED',published_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='DRAFT'</update>
+ <insert id="insertRun" useGeneratedKeys="true" keyProperty="id" keyColumn="id">INSERT INTO sa_drill_run(project_id,scenario_id,user_id,assignment_task_id,status,rubric_version) VALUES(#{projectId},#{scenarioId},#{userId},#{assignmentTaskId},'IN_PROGRESS',#{rubricVersion})</insert>
+ <select id="run" resultType="com.studyagent.assessment.entity.DrillRunEntity">SELECT * FROM sa_drill_run WHERE id=#{id}</select>
+ <select id="runForUpdate" resultType="com.studyagent.assessment.entity.DrillRunEntity">SELECT * FROM sa_drill_run WHERE id=#{id} FOR UPDATE</select>
+ <select id="lockRun" resultType="com.studyagent.assessment.entity.DrillRunEntity">SELECT * FROM sa_drill_run WHERE id=#{id} FOR UPDATE</select>
+ <select id="actionByRequest" resultType="com.studyagent.assessment.entity.DrillRunActionEntity">SELECT * FROM sa_drill_run_action WHERE run_id=#{runId} AND client_request_id=#{requestId}</select>
+ <select id="actions" resultType="com.studyagent.assessment.entity.DrillRunActionEntity">SELECT * FROM sa_drill_run_action WHERE run_id=#{runId} ORDER BY seq_no</select>
+ <select id="unlockedEvidenceCodes" resultType="string">
+  SELECT DISTINCT e.code FROM sa_drill_evidence e WHERE e.unlock_rule_code IS NULL AND e.scenario_id=(SELECT scenario_id FROM sa_drill_run WHERE id=#{runId})
+  UNION SELECT DISTINCT e.code FROM sa_drill_evidence e JOIN sa_drill_run_action a ON a.run_id=#{runId}
+  JOIN sa_drill_rule r ON r.id=a.matched_rule_id WHERE e.scenario_id=(SELECT scenario_id FROM sa_drill_run WHERE id=#{runId}) AND e.unlock_rule_code=r.code
+ </select>
+ <insert id="insertAction" useGeneratedKeys="true" keyProperty="id" keyColumn="id">INSERT INTO sa_drill_run_action(run_id,seq_no,client_request_id,action_text,normalized_action,matched_rule_id,match_source,match_confidence,evidence_unlocked_json,risk_flag,points_awarded) VALUES(#{runId},#{seqNo},#{clientRequestId},#{actionText},#{normalizedAction},#{matchedRuleId},#{matchSource},#{matchConfidence},CAST(#{evidenceUnlockedJson} AS JSON),#{riskFlag},#{pointsAwarded})</insert>
+ <update id="completeRun">UPDATE sa_drill_run SET status=#{status},program_score=#{programScore},final_score=#{finalScore},pass_candidate=#{passCandidate},conclusion_json=CAST(#{conclusionJson} AS JSON),submitted_at=CURRENT_TIMESTAMP,completed_at=IF(#{status}='COMPLETED',CURRENT_TIMESTAMP,NULL) WHERE id=#{id} AND status='IN_PROGRESS'</update>
+ <select id="reviewAttemptForUpdate" resultType="com.studyagent.assessment.entity.QuizAttemptEntity">SELECT * FROM sa_quiz_attempt WHERE id=#{id} FOR UPDATE</select>
+ <select id="reviewRunForUpdate" resultType="com.studyagent.assessment.entity.DrillRunEntity">SELECT * FROM sa_drill_run WHERE id=#{id} FOR UPDATE</select>
+ <select id="quizForAttempt" resultType="com.studyagent.assessment.entity.ProjectQuizEntity">SELECT q.* FROM sa_quiz q JOIN sa_quiz_attempt a ON a.quiz_id=q.id WHERE a.id=#{attemptId}</select>
+ <select id="scenarioForRun" resultType="com.studyagent.assessment.entity.DrillScenarioEntity">SELECT s.* FROM sa_drill_scenario s JOIN sa_drill_run r ON r.scenario_id=s.id WHERE r.id=#{runId}</select>
+ <update id="reviewAttempt">UPDATE sa_quiz_attempt SET status='COMPLETED',final_score=#{score},completed_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status IN ('REVIEW_PENDING','COMPLETED')</update>
+ <update id="reviewRun">UPDATE sa_drill_run SET status='COMPLETED',final_score=#{score},completed_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='REVIEW_PENDING'</update>
+ <insert id="insertReview" useGeneratedKeys="true" keyProperty="id" keyColumn="id">INSERT INTO sa_assessment_review(project_id,target_type,target_id,reviewer_id,decision,score_override,comment) VALUES(#{projectId},#{targetType},#{targetId},#{reviewerId},#{decision},#{scoreOverride},#{comment})</insert>
+ <select id="latestReview" resultType="com.studyagent.assessment.entity.AssessmentReviewEntity">SELECT * FROM sa_assessment_review WHERE target_type=#{type} AND target_id=#{id} ORDER BY id DESC LIMIT 1</select>
+</mapper>

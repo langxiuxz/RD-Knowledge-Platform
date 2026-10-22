@@ -15,6 +15,9 @@ class AgentInvokeRequest(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     mode: Literal["CHAT", "RAG", "AGENT"]
     knowledge_base_id: Optional[int] = Field(default=None, alias="knowledgeBaseId", gt=0)
+    project_id: Optional[int] = Field(default=None, alias="projectId", gt=0)
+    knowledge_snapshot_id: Optional[int] = Field(default=None, alias="knowledgeSnapshotId", gt=0)
+    allowed_document_version_ids: List[int] = Field(default_factory=list, alias="allowedDocumentVersionIds", max_length=10000)
     stream: bool
     recent_messages: List["ConversationMessage"] = Field(default_factory=list, alias="recentMessages", max_length=8)
 
@@ -27,6 +30,8 @@ class AgentCitation(BaseModel):
     file_name: str = Field(alias="fileName")
     page: Optional[int] = None
     score: Optional[float] = None
+    document_version_id: int = Field(alias="documentVersionId")
+    knowledge_snapshot_id: int = Field(alias="knowledgeSnapshotId")
 
     model_config = {"populate_by_name": True}
 

@@ -25,6 +25,9 @@ def _request(mode, **overrides):
         "content": "Explain dependency injection",
         "mode": mode,
         "knowledgeBaseId": None,
+        "projectId": None,
+        "knowledgeSnapshotId": None,
+        "allowedDocumentVersionIds": [],
         "stream": False,
     }
     body.update(overrides)
@@ -47,24 +50,34 @@ def test_chat_invoke_returns_answer(monkeypatch):
 def test_rag_invoke_returns_only_owned_citation(monkeypatch):
     vector_store.clear()
     asyncio.run(vector_store.upsert([
-        VectorRecord(embed("dependency injection"), "owned context", {
-            "chunk_id": "owned", "user_id": 1, "knowledge_base_id": 10,
+        VectorRecord(embed("dependency injection"), "project context", {
+            "chunk_id": "owned", "project_id": 11, "knowledge_base_id": 10,
+            "document_version_id": 1000,
             "document_id": 100, "file_name": "owned.pdf", "page": 12, "chunk_index": 0,
         }),
-        VectorRecord(embed("dependency injection"), "foreign context", {
-            "chunk_id": "foreign", "user_id": 2, "knowledge_base_id": 10,
+        VectorRecord(embed("dependency injection"), "foreign project context", {
+            "chunk_id": "foreign", "project_id": 12, "knowledge_base_id": 10,
+            "document_version_id": 1000,
             "document_id": 200, "file_name": "foreign.pdf", "page": 3, "chunk_index": 0,
+        }),
+        VectorRecord(embed("dependency injection"), "unpublished context", {
+            "chunk_id": "draft", "project_id": 11, "knowledge_base_id": 10,
+            "document_version_id": 1001,
+            "document_id": 100, "file_name": "draft.pdf", "page": 4, "chunk_index": 0,
         }),
     ]))
 
     response = TestClient(app).post(
         "/internal/agent/invoke", headers=_headers(monkeypatch),
-        json=_request("RAG", knowledgeBaseId=10)
+        json=_request("RAG", knowledgeBaseId=10, projectId=11, knowledgeSnapshotId=501,
+                      allowedDocumentVersionIds=[1000])
     )
 
     assert response.status_code == 200
     citations = response.json()["data"]["citations"]
     assert [item["chunkId"] for item in citations] == ["owned"]
+    assert citations[0]["documentVersionId"] == 1000
+    assert citations[0]["knowledgeSnapshotId"] == 501
     assert "foreign context" not in response.json()["data"]["answer"]
 
 
@@ -167,7 +180,8 @@ def test_agent_with_knowledge_base_can_autonomously_call_rag(monkeypatch):
     vector_store.clear()
     asyncio.run(vector_store.upsert([
         VectorRecord(embed("AOP"), "owned AOP notes", {
-            "chunk_id": "combined", "user_id": 1, "knowledge_base_id": 10,
+            "chunk_id": "combined", "project_id": 11, "knowledge_base_id": 10,
+            "document_version_id": 1000,
             "document_id": 101, "file_name": "notes.pdf", "page": 5, "chunk_index": 0,
         })
     ]))
@@ -179,11 +193,14 @@ def test_agent_with_knowledge_base_can_autonomously_call_rag(monkeypatch):
     monkeypatch.setattr("app.graph.builder.LLMFactory.create", lambda self: llm)
     response = TestClient(app).post(
         "/internal/agent/invoke", headers=_headers(monkeypatch),
-        json=_request("AGENT", content="Explain AOP using my notes", knowledgeBaseId=10)
+        json=_request("AGENT", content="Explain AOP using my notes", knowledgeBaseId=10,
+                      projectId=11, knowledgeSnapshotId=501, allowedDocumentVersionIds=[1000])
     )
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["citations"][0]["chunkId"] == "combined"
+    assert data["citations"][0]["documentVersionId"] == 1000
+    assert data["citations"][0]["knowledgeSnapshotId"] == 501
     assert "The notes explain AOP" in data["answer"]
 
 

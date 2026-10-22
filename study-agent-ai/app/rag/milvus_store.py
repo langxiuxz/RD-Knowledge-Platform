@@ -14,7 +14,7 @@ from app.rag.base import VectorRecord, VectorStoreAdapter
 from app.schemas.rag import RetrievedChunk
 
 logger = logging.getLogger(__name__)
-OUTPUT_FIELDS = ["chunk_id", "document_id", "file_name", "page", "content"]
+OUTPUT_FIELDS = ["chunk_id", "document_id", "document_version_id", "file_name", "page", "content"]
 
 
 class MilvusVectorStore(VectorStoreAdapter):
@@ -59,7 +59,7 @@ class MilvusVectorStore(VectorStoreAdapter):
                     schema = MilvusClient.create_schema(auto_id=False, enable_dynamic_field=False)
                     schema.add_field("id", DataType.VARCHAR, is_primary=True, max_length=64)
                     schema.add_field("chunk_id", DataType.VARCHAR, max_length=512)
-                    for name in ("user_id", "knowledge_base_id", "document_id", "page", "chunk_index"):
+                    for name in ("project_id", "knowledge_base_id", "document_id", "document_version_id", "page", "chunk_index"):
                         schema.add_field(name, DataType.INT64)
                     schema.add_field("file_name", DataType.VARCHAR, max_length=1024)
                     schema.add_field("embedding_model", DataType.VARCHAR, max_length=512)
@@ -93,7 +93,7 @@ class MilvusVectorStore(VectorStoreAdapter):
                     "embedding_model": data_type.VARCHAR, "metadata": data_type.JSON,
                     "embedding": data_type.FLOAT_VECTOR}
         required.update({name: data_type.INT64 for name in
-                         ("user_id", "knowledge_base_id", "document_id", "page", "chunk_index")})
+                         ("project_id", "knowledge_base_id", "document_id", "document_version_id", "page", "chunk_index")})
         if any(name not in fields or fields[name]["type"] != expected for name, expected in required.items()):
             raise ValueError("Incompatible Milvus collection fields")
         if (description.get("auto_id") or not fields["id"].get("is_primary")
@@ -111,11 +111,10 @@ class MilvusVectorStore(VectorStoreAdapter):
         return value
 
     @classmethod
-    def _scope(cls, user_id: int, knowledge_base_id: int) -> str:
-        # Format only validated integers, never raw caller strings, into expressions.
-        cls._positive_int64(user_id)
+    def _scope(cls, project_id: int, knowledge_base_id: int) -> str:
+        cls._positive_int64(project_id)
         cls._positive_int64(knowledge_base_id)
-        return f"user_id == {user_id} and knowledge_base_id == {knowledge_base_id}"
+        return f"project_id == {project_id} and knowledge_base_id == {knowledge_base_id}"
 
     @staticmethod
     def _varchar(value: str, max_bytes: int) -> str:
@@ -126,10 +125,12 @@ class MilvusVectorStore(VectorStoreAdapter):
     @staticmethod
     def _row(record: VectorRecord) -> dict:
         metadata = record.metadata
-        user_id, kb_id = metadata["user_id"], metadata["knowledge_base_id"]
-        MilvusVectorStore._scope(user_id, kb_id)
+        project_id, kb_id = metadata["project_id"], metadata["knowledge_base_id"]
+        MilvusVectorStore._scope(project_id, kb_id)
         document_id = metadata["document_id"]
+        version_id = metadata["document_version_id"]
         MilvusVectorStore._positive_int64(document_id)
+        MilvusVectorStore._positive_int64(version_id)
         vector = list(record.vector)
         if len(vector) != DIMENSION or any(not math.isfinite(value) for value in vector):
             raise ValueError("Invalid embedding dimension or values")
@@ -145,9 +146,9 @@ class MilvusVectorStore(VectorStoreAdapter):
         if type(chunk_index) is not int or not 0 <= chunk_index < 2**63:
             raise ValueError("Invalid chunk index")
         # A foreign tenant using the same chunk ID must never overwrite another row.
-        key = hashlib.sha256(json.dumps([user_id, kb_id, chunk_id]).encode("utf-8")).hexdigest()
-        return {"id": key, "chunk_id": chunk_id, "user_id": user_id, "knowledge_base_id": kb_id,
-                "document_id": document_id, "file_name": file_name,
+        key = hashlib.sha256(json.dumps([project_id, kb_id, version_id, chunk_id]).encode("utf-8")).hexdigest()
+        return {"id": key, "chunk_id": chunk_id, "project_id": project_id, "knowledge_base_id": kb_id,
+                "document_id": document_id, "document_version_id": version_id, "file_name": file_name,
                 "page": page, "chunk_index": chunk_index,
                 "embedding_model": model, "metadata": dict(metadata),
                 "content": content, "embedding": vector}
@@ -175,17 +176,26 @@ class MilvusVectorStore(VectorStoreAdapter):
             client.flush(collection_name=self._settings.milvus_collection, timeout=self._settings.milvus_timeout)
         await self._run("delete", delete)
 
-    async def delete_document(self, user_id: int, knowledge_base_id: int, document_id: int) -> None:
-        scope = self._scope(user_id, knowledge_base_id)
-        self._positive_int64(document_id)
-        await self._delete(f"{scope} and document_id == {document_id}")
+    async def delete_document_version(self, project_id: int, knowledge_base_id: int, document_version_id: int) -> None:
+        scope = self._scope(project_id, knowledge_base_id)
+        self._positive_int64(document_version_id)
+        await self._delete(f"{scope} and document_version_id == {document_version_id}")
 
-    async def delete_knowledge_base(self, user_id: int, knowledge_base_id: int) -> None:
-        await self._delete(self._scope(user_id, knowledge_base_id))
+    async def delete_knowledge_base(self, project_id: int, knowledge_base_id: int) -> None:
+        await self._delete(self._scope(project_id, knowledge_base_id))
 
-    async def retrieve(self, user_id: int, knowledge_base_id: int, query: str, top_k: int,
+    async def retrieve(self, project_id: int, knowledge_base_id: int, knowledge_snapshot_id: int,
+                       document_version_ids: List[int], query: str, top_k: int,
                        score_threshold: Optional[float] = None) -> List[RetrievedChunk]:
-        scope = self._scope(user_id, knowledge_base_id)
+        if not document_version_ids:
+            return []
+        scope = self._scope(project_id, knowledge_base_id)
+        self._positive_int64(knowledge_snapshot_id)
+        allowed = sorted(set(self._positive_int64(value) for value in document_version_ids))
+        if len(allowed) > 10000:
+            raise ValueError("too many allowed document versions")
+        version_filter = ",".join(str(value) for value in allowed)
+        scope = f"{scope} and document_version_id in [{version_filter}]"
         if type(top_k) is not int or not 1 <= top_k <= 50:
             raise ValueError("top_k must be between 1 and 50")
         if score_threshold is not None and not -1 <= score_threshold <= 1:
@@ -207,6 +217,8 @@ class MilvusVectorStore(VectorStoreAdapter):
                 continue
             entity = hit["entity"]
             chunks.append(RetrievedChunk(chunkId=entity["chunk_id"], documentId=entity["document_id"],
+                                         documentVersionId=entity["document_version_id"],
+                                         knowledgeSnapshotId=knowledge_snapshot_id,
                                          fileName=entity["file_name"], page=entity.get("page") or 1,
                                          content=entity["content"], score=max(-1.0, min(1.0, score))))
         return chunks

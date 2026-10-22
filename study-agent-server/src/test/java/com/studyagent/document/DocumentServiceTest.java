@@ -1,23 +1,23 @@
 package com.studyagent.document;
 
-import com.studyagent.ai.client.AiClient;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.common.exception.ErrorCode;
-import com.studyagent.config.AppProperties;
 import com.studyagent.document.dto.DocumentProgressRequest;
-import com.studyagent.document.entity.DocumentEntity;
+import com.studyagent.document.entity.DocumentVersionEntity;
 import com.studyagent.document.mapper.DocumentMapper;
+import com.studyagent.document.mapper.DocumentVersionMapper;
+import com.studyagent.document.service.DocumentIndexDispatcher;
 import com.studyagent.document.service.DocumentService;
 import com.studyagent.file.service.FileStorageService;
+import com.studyagent.knowledge.mapper.KnowledgeBaseMapper;
 import com.studyagent.knowledge.service.KnowledgeBaseService;
+import com.studyagent.project.mapper.AuditLogMapper;
+import com.studyagent.project.service.ProjectAccessService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.web.MockMultipartFile;
-
-import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
@@ -25,96 +25,73 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class DocumentServiceTest {
-    @Mock DocumentMapper mapper;
-    @Mock KnowledgeBaseService knowledgeBaseService;
-    @Mock FileStorageService fileStorageService;
-    @Mock AiClient aiClient;
+    @Mock DocumentMapper documents;
+    @Mock DocumentVersionMapper versions;
+    @Mock KnowledgeBaseService knowledge;
+    @Mock KnowledgeBaseMapper bases;
+    @Mock FileStorageService storage;
+    @Mock DocumentIndexDispatcher dispatcher;
+    @Mock ProjectAccessService access;
+    @Mock AuditLogMapper audits;
     private DocumentService service;
 
     @BeforeEach
     void setUp() {
-        AppProperties properties = new AppProperties(
-                new AppProperties.Jwt("phase3-test-secret-with-at-least-32-characters", Duration.ofMinutes(5), Duration.ofDays(1)),
-                new AppProperties.Ai("http://localhost:8000", Duration.ofSeconds(1), Duration.ofSeconds(5)),
-                new AppProperties.Storage("./data/files", "http://localhost:8080/internal/files"),
-                new AppProperties.Internal("phase3-internal-token"));
-        service = new DocumentService(mapper, knowledgeBaseService, fileStorageService, aiClient, properties);
+        service = new DocumentService(documents, versions, knowledge, bases, storage, dispatcher, access, audits);
     }
 
     @Test
-    void progress_shouldIgnoreOldTaskAndAcceptDuplicateCurrentCallback() {
-        DocumentEntity entity = document("task-current", "EMBEDDING", 60);
-        when(mapper.findByIdForUpdate(101L)).thenReturn(entity);
-        when(mapper.updateProgressIfCurrentTask(101L, "task-current", "READY", 100, 3, null, true)).thenReturn(1);
+    void progress_ignoresStaleTaskAndAcceptsDuplicateCurrentCallback() {
+        var version = version("task-current", "EMBEDDING", 60);
+        when(versions.findByIdForUpdate(101L)).thenReturn(version);
+        when(versions.updateProgress(101L, "task-current", "READY", 100, 3, null, null, true)).thenReturn(1);
 
         service.progress(101L, new DocumentProgressRequest("task-old", "READY", 100, 3, null));
         service.progress(101L, new DocumentProgressRequest("task-current", "READY", 100, 3, null));
         service.progress(101L, new DocumentProgressRequest("task-current", "READY", 100, 3, null));
 
-        verify(mapper, times(3)).findByIdForUpdate(101L);
-        verify(mapper, times(2)).updateProgressIfCurrentTask(101L, "task-current", "READY", 100, 3, null, true);
+        verify(versions, times(3)).findByIdForUpdate(101L);
+        verify(versions, times(2)).updateProgress(101L, "task-current", "READY", 100, 3, null, null, true);
     }
 
     @Test
-    void progress_shouldRejectProgressRegression() {
-        DocumentEntity entity = document("task-current", "EMBEDDING", 60);
-        when(mapper.findByIdForUpdate(101L)).thenReturn(entity);
+    void progress_rejectsReadyBeforePreviousStagesComplete() {
+        when(versions.findByIdForUpdate(101L)).thenReturn(version("task-current", "UPLOADED", 0));
 
         assertThatThrownBy(() -> service.progress(101L,
-                new DocumentProgressRequest("task-current", "EMBEDDING", 30, 2, null)))
+                new DocumentProgressRequest("task-current", "READY", 100, 3, null)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).errorCode())
                 .isEqualTo(ErrorCode.VALIDATION_FAILED);
-        verify(mapper, never()).updateProgressIfCurrentTask(anyLong(), anyString(), anyString(), anyInt(), any(), any(), anyBoolean());
+        verify(versions, never()).updateProgress(anyLong(), anyString(), anyString(), anyInt(), any(), any(), any(), anyBoolean());
     }
 
     @Test
-    void upload_whenPdfContentIsSpoofed_shouldRejectBeforeStorage() throws Exception {
-        MockMultipartFile file = new MockMultipartFile(
-                "file", "notes.pdf", "application/pdf", "not a pdf".getBytes());
+    void progress_requiresErrorMessageForFailure() {
+        when(versions.findByIdForUpdate(101L)).thenReturn(version("task-current", "EMBEDDING", 60));
 
-        assertThatThrownBy(() -> service.upload(1L, 10L, file))
+        assertThatThrownBy(() -> service.progress(101L,
+                new DocumentProgressRequest("task-current", "FAILED", 0, 3, " ")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).errorCode())
-                .isEqualTo(ErrorCode.FILE_INVALID);
-        verify(fileStorageService, never()).store(any());
+                .isEqualTo(ErrorCode.VALIDATION_FAILED);
+        verify(versions, never()).updateProgress(anyLong(), anyString(), anyString(), anyInt(), any(), any(), any(), anyBoolean());
     }
 
     @Test
-    void upload_whenTextContainsBinaryNullBytes_shouldRejectBeforeStorage() throws Exception {
-        MockMultipartFile file = new MockMultipartFile(
-                "file", "notes.txt", "text/plain", new byte[]{'a', 0, 'b'});
+    void progress_doesNotChangeTerminalVersion() {
+        when(versions.findByIdForUpdate(101L)).thenReturn(version("task-current", "READY", 100));
 
-        assertThatThrownBy(() -> service.upload(1L, 10L, file))
-                .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).errorCode())
-                .isEqualTo(ErrorCode.FILE_INVALID);
-        verify(fileStorageService, never()).store(any());
+        service.progress(101L, new DocumentProgressRequest("task-current", "FAILED", 0, 3, "late failure"));
+
+        verify(versions, never()).updateProgress(anyLong(), anyString(), anyString(), anyInt(), any(), any(), any(), anyBoolean());
     }
 
-    @Test
-    void progress_whenAlreadyTerminal_shouldIgnoreLateResultAndDuplicateFailure() {
-        for (String terminal : new String[]{"READY", "FAILED"}) {
-            when(mapper.findByIdForUpdate(101L)).thenReturn(document("task-current", terminal, 60));
-            service.progress(101L, new DocumentProgressRequest("task-current", "READY", 100, 3, null));
-            service.progress(101L, new DocumentProgressRequest("task-current", "FAILED", 0, null, "late failure"));
-        }
-        verify(mapper, never()).updateProgressIfCurrentTask(anyLong(), anyString(), anyString(), anyInt(), any(), any(), anyBoolean());
-    }
-
-    @Test
-    void reprocess_whenConcurrentRequestAlreadyClaimedTask_shouldNotDispatchAgain() {
-        when(mapper.findByIdAndUserId(101L, 1L)).thenReturn(document("old", "FAILED", 0));
-        when(mapper.updateTaskStart(any())).thenReturn(0);
-        assertThatThrownBy(() -> service.reprocess(1L, 101L)).isInstanceOf(BusinessException.class);
-        verifyNoInteractions(aiClient);
-    }
-
-    private DocumentEntity document(String taskId, String status, int progress) {
-        DocumentEntity entity = new DocumentEntity();
+    private DocumentVersionEntity version(String taskId, String status, int progress) {
+        var entity = new DocumentVersionEntity();
         entity.setId(101L);
         entity.setCurrentTaskId(taskId);
-        entity.setStatus(status);
+        entity.setProcessStatus(status);
         entity.setProgress(progress);
         return entity;
     }

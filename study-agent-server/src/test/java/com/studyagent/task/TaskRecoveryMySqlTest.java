@@ -4,7 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studyagent.ai.client.AiClient;
 import com.studyagent.common.exception.BusinessException;
 import com.studyagent.config.TaskRecoveryProperties;
-import com.studyagent.document.mapper.DocumentMapper;
+import com.studyagent.insight.mapper.CapabilityReportMapper;
+import com.studyagent.document.mapper.DocumentVersionMapper;
 import com.studyagent.plan.mapper.StudyPlanMapper;
 import com.studyagent.plan.mapper.StudyPlanTaskMapper;
 import com.studyagent.plan.service.StudyPlanGenerationPersistenceService;
@@ -48,7 +49,7 @@ class TaskRecoveryMySqlTest {
     private boolean schemaCreated;
     private JdbcTemplate jdbc;
     private DriverManagerDataSource dataSource;
-    private DocumentMapper documents;
+    private DocumentVersionMapper documents;
     private QuizMapper quizzes;
     private StudyPlanMapper plans;
     private QuizQuestionMapper questions;
@@ -69,7 +70,16 @@ class TaskRecoveryMySqlTest {
                 + (source.getRawQuery() == null ? "" : "?" + source.getRawQuery());
         dataSource = new DriverManagerDataSource(targetUrl, username, password);
         try (Connection connection = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V1__init_schema.sql"));
+            for (String migration : List.of(
+                    "V1__init_schema.sql",
+                    "V2__long_term_memory.sql",
+                    "V3__focus_learning_records.sql",
+                    "V4__project_workspace.sql",
+                    "V5__knowledge_project_ownership.sql",
+                    "V6__document_versions_and_knowledge_snapshots.sql",
+                    "V7__conversation_snapshot_citations.sql")) {
+                ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/" + migration));
+            }
         }
         jdbc = new JdbcTemplate(dataSource);
         SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
@@ -80,7 +90,7 @@ class TaskRecoveryMySqlTest {
         var resolver = new PathMatchingResourcePatternResolver();
         factory.setMapperLocations(resolver.getResources("classpath*:mapper/**/*.xml"));
         SqlSessionTemplate session = new SqlSessionTemplate(factory.getObject());
-        documents = session.getMapper(DocumentMapper.class);
+        documents = session.getMapper(DocumentVersionMapper.class);
         quizzes = session.getMapper(QuizMapper.class);
         plans = session.getMapper(StudyPlanMapper.class);
         questions = session.getMapper(QuizQuestionMapper.class);
@@ -99,9 +109,25 @@ class TaskRecoveryMySqlTest {
 
     @BeforeEach
     void seedUser() {
+        jdbc.update("UPDATE sa_knowledge_base SET current_snapshot_id=NULL");
+        jdbc.update("UPDATE sa_document SET current_published_version_id=NULL");
+        jdbc.update("DELETE FROM sa_knowledge_snapshot_item");
+        jdbc.update("DELETE FROM sa_document_version");
+        jdbc.update("DELETE FROM sa_document");
+        jdbc.update("DELETE FROM sa_knowledge_snapshot");
+        jdbc.update("DELETE FROM sa_knowledge_base");
+        jdbc.update("DELETE FROM sa_quiz_question");
+        jdbc.update("DELETE FROM sa_quiz WHERE id=50");
+        jdbc.update("DELETE FROM sa_study_plan_task WHERE plan_id=60");
+        jdbc.update("DELETE FROM sa_study_plan WHERE id=60");
+        jdbc.update("DELETE FROM sa_audit_log");
+        jdbc.update("DELETE FROM sa_project_member");
+        jdbc.update("DELETE FROM sa_project");
         jdbc.update("DELETE FROM sa_user");
         jdbc.update("INSERT INTO sa_user(id,username,password_hash,nickname) VALUES (1,'test-user','test-hash','test')");
-        jdbc.update("INSERT INTO sa_knowledge_base(id,user_id,name) VALUES (10,1,'test-kb')");
+        jdbc.update("INSERT INTO sa_project(id,name,code,created_by) VALUES (20,'Recovery Test','recovery-test',1)");
+        jdbc.update("INSERT INTO sa_project_member(project_id,user_id,role,status) VALUES (20,1,'OWNER','ACTIVE')");
+        jdbc.update("INSERT INTO sa_knowledge_base(id,project_id,created_by,name) VALUES (10,20,1,'test-kb')");
     }
 
     @Test
@@ -112,7 +138,7 @@ class TaskRecoveryMySqlTest {
         plan("PROCESSING", true);
         // Only SQL rows survive; a new recovery instance has no prior in-memory task state.
         recovery(100).recover();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sa_document WHERE status='FAILED' AND error_message IS NOT NULL", Integer.class)).isEqualTo(4);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sa_document_version WHERE process_status='FAILED' AND error_message IS NOT NULL", Integer.class)).isEqualTo(4);
         assertThat(quizzes.findByIdAndUserId(50L, 1L).getStatus()).isEqualTo("FAILED");
         assertThat(plans.findByIdAndUserId(60L, 1L).getGenerationStatus()).isEqualTo("FAILED");
         assertThat(plans.findByIdAndUserId(60L, 1L).getStatus()).isEqualTo("ACTIVE");
@@ -129,8 +155,8 @@ class TaskRecoveryMySqlTest {
         quiz("READY", true);
         plan("READY", true);
         recovery(100).recover();
-        assertThat(documents.findById(1L).getStatus()).isEqualTo("EMBEDDING");
-        assertThat(documents.findById(2L).getStatus()).isEqualTo("READY");
+        assertThat(documents.findById(1L).getProcessStatus()).isEqualTo("EMBEDDING");
+        assertThat(documents.findById(2L).getProcessStatus()).isEqualTo("READY");
         assertThat(quizzes.findByIdAndUserId(50L, 1L).getStatus()).isEqualTo("READY");
         assertThat(plans.findByIdAndUserId(60L, 1L).getGenerationStatus()).isEqualTo("READY");
     }
@@ -140,8 +166,8 @@ class TaskRecoveryMySqlTest {
         document(1, "PARSING", true);
         document(2, "CHUNKING", true);
         assertThat(documents.failStaleTasks(900, 1, "timeout")).isEqualTo(1);
-        assertThat(documents.findById(1L).getStatus()).isEqualTo("FAILED");
-        assertThat(documents.findById(2L).getStatus()).isEqualTo("CHUNKING");
+        assertThat(documents.findById(1L).getProcessStatus()).isEqualTo("FAILED");
+        assertThat(documents.findById(2L).getProcessStatus()).isEqualTo("CHUNKING");
         assertThat(documents.failStaleTasks(900, 1, "timeout")).isEqualTo(1);
         assertThat(documents.failStaleTasks(900, 1, "timeout")).isZero();
     }
@@ -150,16 +176,11 @@ class TaskRecoveryMySqlTest {
     void lateDocumentResult_shouldNotOverwriteTimeoutAndOldTaskShouldNotOverwriteRetry() {
         document(1, "EMBEDDING", true);
         recovery(100).recover();
-        assertThat(documents.updateProgressIfCurrentTask(1L, "task-1", "READY", 100, 3, null, true)).isZero();
-        var retry = documents.findByIdAndUserId(1L, 1L);
-        retry.setCurrentTaskId("task-new");
-        retry.setStatus("UPLOADED");
-        retry.setProgress(0);
-        retry.setChunkCount(0);
-        assertThat(documents.updateTaskStart(retry)).isEqualTo(1);
-        assertThat(documents.updateTaskStart(retry)).isZero();
-        assertThat(documents.updateProgressIfCurrentTask(1L, "task-1", "FAILED", 0, 0, "old error", false)).isZero();
-        assertThat(documents.findById(1L).getStatus()).isEqualTo("UPLOADED");
+        assertThat(documents.updateProgress(1L, "task-1", "READY", 100, 3, null, null, true)).isZero();
+        assertThat(documents.startTask(1L, "task-1", "task-new", "b".repeat(64))).isEqualTo(1);
+        assertThat(documents.startTask(1L, "task-1", "task-new", "b".repeat(64))).isZero();
+        assertThat(documents.updateProgress(1L, "task-1", "FAILED", 0, 0, "old error", null, false)).isZero();
+        assertThat(documents.findById(1L).getProcessStatus()).isEqualTo("UPLOADED");
     }
 
     @Test
@@ -218,14 +239,20 @@ class TaskRecoveryMySqlTest {
     }
 
     private TaskRecoveryService recovery(int batchSize) {
-        return new TaskRecoveryService(documents, quizzes, plans,
-                new TaskRecoveryProperties(true, Duration.ofMinutes(15), Duration.ofMinutes(5), batchSize));
+        return new TaskRecoveryService(documents, quizzes, plans, mock(CapabilityReportMapper.class),
+                new TaskRecoveryProperties(true, Duration.ofMinutes(15), Duration.ofMinutes(5), Duration.ofMinutes(5), batchSize));
     }
 
     private void document(long id, String status, boolean expired) {
-        jdbc.update("INSERT INTO sa_document(id,knowledge_base_id,user_id,file_name,file_type,storage_key,file_url,status,progress,current_task_id) "
-                + "VALUES (?,10,1,'test.txt','txt','test-key','http://spring/internal/files/test',?,0,?)", id, status, "task-" + id);
-        if (expired) jdbc.update("UPDATE sa_document SET update_time=TIMESTAMPADD(HOUR,-1,CURRENT_TIMESTAMP) WHERE id=?", id);
+        jdbc.update("INSERT INTO sa_document(id,project_id,knowledge_base_id,created_by,title,status,user_id,file_name,file_type,file_size,storage_key,file_url) "
+                + "VALUES (?,20,10,1,'test','ACTIVE',1,'test.txt','txt',10,'test-key','http://spring/internal/files/test')", id);
+        String hash = "FAILED".equals(status) ? null : "a".repeat(64);
+        String error = "FAILED".equals(status) ? "previous processing failure" : null;
+        int progress = "READY".equals(status) ? 100 : 0;
+        jdbc.update("INSERT INTO sa_document_version(id,document_id,project_id,knowledge_base_id,version_no,file_name,file_type,file_size,content_hash,storage_key,process_status,publish_status,progress,chunk_count,current_task_id,error_message) "
+                        + "VALUES (?,?,20,10,1,'test.txt','txt',10,?,'test-key',?,'DRAFT',?,0,?,?)",
+                id, id, hash, status, progress, "task-" + id, error);
+        if (expired) jdbc.update("UPDATE sa_document_version SET update_time=TIMESTAMPADD(HOUR,-1,CURRENT_TIMESTAMP) WHERE id=?", id);
     }
 
     private void quiz(String status, boolean expired) {

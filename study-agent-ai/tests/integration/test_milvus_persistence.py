@@ -28,10 +28,11 @@ def test_persistence_across_python_processes_and_scoped_idempotent_deletes():
                         milvus_timeout=30)
     store = MilvusVectorStore(settings)
 
-    def record(user_id, kb_id, content):
+    def record(project_id, kb_id, content):
         return VectorRecord(embed("persistence test"), content, {
-            "chunk_id": "same-chunk", "user_id": user_id, "knowledge_base_id": kb_id,
-            "document_id": 100, "file_name": "持久化.txt", "page": 1, "chunk_index": 0,
+            "chunk_id": "same-chunk", "project_id": project_id, "knowledge_base_id": kb_id,
+            "document_id": 100, "document_version_id": 1000,
+            "file_name": "持久化.txt", "page": 1, "chunk_index": 0,
         })
 
     async def write_and_disconnect():
@@ -45,14 +46,14 @@ def test_persistence_across_python_processes_and_scoped_idempotent_deletes():
     async def delete_and_verify():
         try:
             for _ in range(2):
-                await store.delete_document(1, 10, 100)
-            assert await store.retrieve(1, 10, "persistence test", 5) == []
-            assert len(await store.retrieve(2, 10, "persistence test", 5)) == 1
-            assert len(await store.retrieve(1, 11, "persistence test", 5)) == 1
+                await store.delete_document_version(1, 10, 1000)
+            assert await store.retrieve(1, 10, 501, [1000], "persistence test", 5) == []
+            assert len(await store.retrieve(2, 10, 501, [1000], "persistence test", 5)) == 1
+            assert len(await store.retrieve(1, 11, 501, [1000], "persistence test", 5)) == 1
             for _ in range(2):
                 await store.delete_knowledge_base(2, 10)
-            assert await store.retrieve(2, 10, "persistence test", 5) == []
-            assert len(await store.retrieve(1, 11, "persistence test", 5)) == 1
+            assert await store.retrieve(2, 10, 501, [1000], "persistence test", 5) == []
+            assert len(await store.retrieve(1, 11, 501, [1000], "persistence test", 5)) == 1
         finally:
             await store.close()
 
@@ -67,7 +68,7 @@ async def main():
     store = MilvusVectorStore(Settings(_env_file=None, **json.loads(os.environ['TEST_MILVUS_SETTINGS'])))
     try:
         await store.initialize()
-        chunks = await store.retrieve(1, 10, 'persistence test', 5, 0.6)
+        chunks = await store.retrieve(1, 10, 501, [1000], 'persistence test', 5, 0.6)
         print(json.dumps([chunk.model_dump(by_alias=True) for chunk in chunks]))
     finally:
         await store.close()

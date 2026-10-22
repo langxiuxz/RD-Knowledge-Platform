@@ -1,51 +1,17 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.studyagent.document.mapper.DocumentMapper">
-  <insert id="insert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
-    INSERT INTO sa_document (knowledge_base_id,user_id,file_name,file_type,mime_type,file_size,storage_key,file_url,status,progress,chunk_count,current_task_id,error_message)
-    VALUES (#{knowledgeBaseId},#{userId},#{fileName},#{fileType},#{mimeType},#{fileSize},#{storageKey},#{fileUrl},#{status},#{progress},#{chunkCount},#{currentTaskId},#{errorMessage})
-  </insert>
-  <sql id="baseSelect">SELECT id,knowledge_base_id,user_id,file_name,file_type,mime_type,file_size,storage_key,file_url,status,progress,chunk_count,current_task_id,error_message,create_time,update_time,processed_at FROM sa_document</sql>
-  <select id="findByIdAndUserId" resultType="com.studyagent.document.entity.DocumentEntity">
-    <include refid="baseSelect"/> WHERE id=#{id} AND user_id=#{userId}
-  </select>
-  <select id="findById" resultType="com.studyagent.document.entity.DocumentEntity">
-    <include refid="baseSelect"/> WHERE id=#{id}
-  </select>
-  <select id="findByIdForUpdate" resultType="com.studyagent.document.entity.DocumentEntity">
-    <include refid="baseSelect"/> WHERE id=#{id} FOR UPDATE
-  </select>
-  <select id="countByKnowledgeBaseAndUserId" resultType="long">
-    SELECT COUNT(*) FROM sa_document WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
-    <if test="fileName != null and fileName != ''">AND file_name LIKE CONCAT('%',#{fileName},'%')</if>
-    <if test="status != null and status != ''">AND status=#{status}</if>
-  </select>
-  <select id="findPageByKnowledgeBaseAndUserId" resultType="com.studyagent.document.entity.DocumentEntity">
-    <include refid="baseSelect"/> WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
-    <if test="fileName != null and fileName != ''">AND file_name LIKE CONCAT('%',#{fileName},'%')</if>
-    <if test="status != null and status != ''">AND status=#{status}</if>
-    ORDER BY update_time DESC,id DESC LIMIT #{offset},#{pageSize}
-  </select>
-  <update id="updateTaskStart">
-    UPDATE sa_document SET status=#{status},progress=#{progress},chunk_count=#{chunkCount},current_task_id=#{currentTaskId},error_message=NULL,processed_at=NULL
-    WHERE id=#{id} AND user_id=#{userId} AND status='FAILED'
-  </update>
-  <update id="updateProgressIfCurrentTask">
-    UPDATE sa_document SET status=#{status}, progress=#{progress},
-      chunk_count=COALESCE(#{chunkCount},chunk_count), error_message=#{errorMessage},
-      processed_at=CASE WHEN #{ready}=true THEN CURRENT_TIMESTAMP ELSE processed_at END
-    WHERE id=#{id} AND current_task_id=#{taskId}
-      AND status IN ('UPLOADED','PARSING','CHUNKING','EMBEDDING')
-  </update>
-  <select id="findStorageKeysByKnowledgeBaseAndUser" resultType="string">
-    SELECT storage_key FROM sa_document WHERE knowledge_base_id=#{knowledgeBaseId} AND user_id=#{userId}
-  </select>
-  <select id="existsByStorageKey" resultType="boolean">SELECT EXISTS(SELECT 1 FROM sa_document WHERE storage_key=#{storageKey})</select>
-  <delete id="deleteByIdAndUserId">DELETE FROM sa_document WHERE id=#{id} AND user_id=#{userId}</delete>
-  <update id="failStaleTasks">
-      UPDATE sa_document SET status = 'FAILED', error_message = #{errorMessage}
-      WHERE status IN ('UPLOADED','PARSING','CHUNKING','EMBEDDING')
-        AND update_time &lt; TIMESTAMPADD(SECOND, -#{timeoutSeconds}, CURRENT_TIMESTAMP)
-      ORDER BY update_time, id LIMIT #{batchSize}
-  </update>
+ <insert id="insert" useGeneratedKeys="true" keyProperty="id">INSERT INTO sa_document(project_id,knowledge_base_id,created_by,title,status) VALUES(#{projectId},#{knowledgeBaseId},#{createdBy},#{title},'ACTIVE')</insert>
+ <sql id="select">SELECT d.*,v.version_no AS current_version_no,v.process_status AS latest_version_process_status,v.publish_status AS latest_version_publish_status
+ FROM sa_document d LEFT JOIN sa_document_version v ON v.document_id=d.id <choose><when test="learner != null and learner">AND v.id=d.current_published_version_id</when><otherwise>AND v.version_no=(SELECT MAX(v2.version_no) FROM sa_document_version v2 WHERE v2.document_id=d.id)</otherwise></choose></sql>
+ <select id="findById" resultType="com.studyagent.document.entity.DocumentEntity">SELECT d.* FROM sa_document d WHERE d.id=#{id}</select>
+ <select id="findByIdForUpdate" resultType="com.studyagent.document.entity.DocumentEntity">SELECT * FROM sa_document WHERE id=#{id} FOR UPDATE</select>
+ <select id="count" resultType="long">SELECT COUNT(*) FROM sa_document WHERE knowledge_base_id=#{knowledgeBaseId}<if test="learner">AND current_published_version_id IS NOT NULL</if>
+ <if test="keyword!=null and keyword!=''">AND title LIKE CONCAT('%',#{keyword},'%')</if><if test="status!=null and status!=''">AND status=#{status}</if></select>
+ <select id="findPage" resultType="com.studyagent.document.entity.DocumentEntity"><include refid="select"/> WHERE d.knowledge_base_id=#{knowledgeBaseId}<if test="learner">AND d.current_published_version_id IS NOT NULL</if>
+ <if test="keyword!=null and keyword!=''">AND d.title LIKE CONCAT('%',#{keyword},'%')</if><if test="status!=null and status!=''">AND d.status=#{status}</if>
+ ORDER BY d.update_time DESC,d.id DESC LIMIT #{offset},#{pageSize}</select>
+ <update id="publish">UPDATE sa_document SET current_published_version_id=#{versionId},update_time=CURRENT_TIMESTAMP WHERE id=#{id}</update>
+ <update id="archive">UPDATE sa_document SET status='ARCHIVED',archived_at=COALESCE(archived_at,CURRENT_TIMESTAMP) WHERE id=#{id}</update>
+ <update id="touch">UPDATE sa_document SET update_time=CURRENT_TIMESTAMP WHERE id=#{id}</update>
 </mapper>

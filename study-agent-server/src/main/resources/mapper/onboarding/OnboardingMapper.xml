@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.studyagent.onboarding.mapper.OnboardingMapper">
+ <select id="findPath" resultType="com.studyagent.onboarding.entity.OnboardingPathEntity">SELECT * FROM sa_onboarding_path WHERE id=#{id}</select>
+ <select id="lockPath" resultType="com.studyagent.onboarding.entity.OnboardingPathEntity">SELECT * FROM sa_onboarding_path WHERE id=#{id} FOR UPDATE</select>
+ <insert id="insertPath" useGeneratedKeys="true" keyProperty="id">
+  INSERT INTO sa_onboarding_path(project_id,name,target_role,description,knowledge_snapshot_id,created_by)
+  VALUES(#{projectId},#{name},#{targetRole},#{description},#{knowledgeSnapshotId},#{createdBy})
+ </insert>
+ <update id="updatePath">UPDATE sa_onboarding_path SET name=#{name},target_role=#{targetRole},description=#{description},knowledge_snapshot_id=#{knowledgeSnapshotId} WHERE id=#{id} AND status='DRAFT'</update>
+ <update id="publishPath">UPDATE sa_onboarding_path SET status='PUBLISHED',version_no=version_no+1,published_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='DRAFT'</update>
+ <sql id="pathFilter">
+  WHERE project_id=#{projectId}
+  <if test="query.keyword != null and query.keyword != ''">AND name LIKE CONCAT('%',#{query.keyword},'%')</if>
+  <if test="query.status != null">AND status=#{query.status}</if>
+  <if test="query.targetRole != null and query.targetRole != ''">AND target_role=#{query.targetRole}</if>
+ </sql>
+ <select id="countPaths" resultType="long">SELECT COUNT(*) FROM sa_onboarding_path <include refid="pathFilter"/></select>
+ <select id="listPaths" resultType="com.studyagent.onboarding.entity.OnboardingPathEntity">SELECT * FROM sa_onboarding_path <include refid="pathFilter"/> ORDER BY create_time DESC,id DESC LIMIT #{offset},#{query.pageSize}</select>
+ <select id="findTask" resultType="com.studyagent.onboarding.entity.PathTaskEntity">SELECT * FROM sa_onboarding_path_task WHERE id=#{id}</select>
+ <select id="lockTask" resultType="com.studyagent.onboarding.entity.PathTaskEntity">SELECT * FROM sa_onboarding_path_task WHERE id=#{id} FOR UPDATE</select>
+ <select id="tasks" resultType="com.studyagent.onboarding.entity.PathTaskEntity">SELECT * FROM sa_onboarding_path_task WHERE path_id=#{pathId} ORDER BY sort_order,id</select>
+ <select id="dependencies" resultType="com.studyagent.onboarding.entity.TaskDependencyEntity">SELECT * FROM sa_onboarding_task_dependency WHERE path_id=#{pathId} ORDER BY task_id,prerequisite_task_id</select>
+ <insert id="insertTask" useGeneratedKeys="true" keyProperty="id">
+  INSERT INTO sa_onboarding_path_task(path_id,type,title,description,resource_type,resource_id,completion_rule,estimated_minutes,required,sort_order)
+  VALUES(#{pathId},#{type},#{title},#{description},#{resourceType},#{resourceId},#{completionRule},#{estimatedMinutes},#{required},#{sortOrder})
+ </insert>
+ <update id="updateTask">UPDATE sa_onboarding_path_task SET type=#{type},title=#{title},description=#{description},resource_type=#{resourceType},resource_id=#{resourceId},completion_rule=#{completionRule},estimated_minutes=#{estimatedMinutes},required=#{required},sort_order=#{sortOrder} WHERE id=#{id}</update>
+ <delete id="deleteTask">DELETE FROM sa_onboarding_path_task WHERE id=#{id}</delete>
+ <delete id="deleteDependencies">DELETE FROM sa_onboarding_task_dependency WHERE task_id=#{taskId} OR prerequisite_task_id=#{taskId}</delete>
+ <delete id="deleteOutgoingDependencies">DELETE FROM sa_onboarding_task_dependency WHERE task_id=#{taskId}</delete>
+ <insert id="insertDependency" useGeneratedKeys="true" keyProperty="id">INSERT INTO sa_onboarding_task_dependency(path_id,task_id,prerequisite_task_id) VALUES(#{pathId},#{taskId},#{prerequisiteTaskId})</insert>
+ <update id="updateOrder">UPDATE sa_onboarding_path_task SET sort_order=#{sortOrder} WHERE id=#{id}</update>
+ <delete id="deleteContentDependency">DELETE FROM sa_content_dependency WHERE target_type='PATH_TASK' AND target_id=#{taskId}</delete>
+ <insert id="insertContentDependency">
+  INSERT INTO sa_content_dependency(project_id,source_document_id,source_version_id,target_type,target_id)
+  SELECT #{projectId},document_id,id,'PATH_TASK',#{taskId} FROM sa_document_version WHERE id=#{versionId}
+ </insert>
+ <select id="unresolvedDependencies" resultType="long">
+  SELECT DISTINCT t.id FROM sa_onboarding_path_task t JOIN sa_content_dependency d ON
+  (d.target_type='PATH_TASK' AND d.target_id=t.id OR d.target_type=t.resource_type AND d.target_id=t.resource_id)
+  WHERE t.path_id=#{pathId} AND d.review_status='NEEDS_REVIEW'
+ </select>
+ <select id="findAssignment" resultType="com.studyagent.onboarding.entity.AssignmentEntity">SELECT * FROM sa_onboarding_assignment WHERE id=#{id}</select>
+ <select id="lockAssignment" resultType="com.studyagent.onboarding.entity.AssignmentEntity">SELECT * FROM sa_onboarding_assignment WHERE id=#{id} FOR UPDATE</select>
+ <insert id="insertAssignment" useGeneratedKeys="true" keyProperty="id">
+  INSERT INTO sa_onboarding_assignment(project_id,path_id,path_version,knowledge_snapshot_id,assignee_user_id,assigned_by,due_at)
+  VALUES(#{projectId},#{pathId},#{pathVersion},#{knowledgeSnapshotId},#{assigneeUserId},#{assignedBy},#{dueAt})
+ </insert>
+ <update id="updateAssignment">UPDATE sa_onboarding_assignment SET status=#{status},progress=#{progress},started_at=#{startedAt},submitted_at=#{submittedAt},completed_at=#{completedAt} WHERE id=#{id}</update>
+ <select id="findAssignmentTask" resultType="com.studyagent.onboarding.entity.AssignmentTaskEntity">SELECT * FROM sa_onboarding_assignment_task WHERE id=#{id}</select>
+ <select id="assignmentTasks" resultType="com.studyagent.onboarding.entity.AssignmentTaskEntity">SELECT * FROM sa_onboarding_assignment_task WHERE assignment_id=#{assignmentId} ORDER BY sort_order,id</select>
+ <insert id="insertAssignmentTask" useGeneratedKeys="true" keyProperty="id">
+  INSERT INTO sa_onboarding_assignment_task(assignment_id,source_path_task_id,type,title,resource_type,resource_id,prerequisite_task_ids_json,completion_rule,required,sort_order,status)
+  VALUES(#{assignmentId},#{sourcePathTaskId},#{type},#{title},#{resourceType},#{resourceId},CAST(#{prerequisiteTaskIdsJson} AS JSON),#{completionRule},#{required},#{sortOrder},#{status})
+ </insert>
+ <update id="setTaskDependencies">UPDATE sa_onboarding_assignment_task SET prerequisite_task_ids_json=CAST(#{prerequisiteTaskIdsJson} AS JSON),status=#{status} WHERE id=#{id}</update>
+ <update id="updateAssignmentTask">UPDATE sa_onboarding_assignment_task SET status=#{status},completion_note=#{completionNote},opened_at=#{openedAt},completed_at=#{completedAt} WHERE id=#{id}</update>
+ <update id="updateAssessmentTask">
+  UPDATE sa_onboarding_assignment_task
+  SET status=#{task.status},quiz_attempt_id=#{task.quizAttemptId},drill_run_id=#{task.drillRunId},
+      opened_at=COALESCE(opened_at,CURRENT_TIMESTAMP),completed_at=#{task.completedAt},update_time=CURRENT_TIMESTAMP
+  WHERE id=#{task.id} AND assignment_id=#{task.assignmentId}
+    AND status IN ('PENDING','IN_PROGRESS')
+ </update>
+ <sql id="assignmentFilter">
+  WHERE project_id=#{projectId}
+  <if test="assigneeId != null">AND assignee_user_id=#{assigneeId}</if>
+  <if test="query.status != null">AND status=#{query.status}</if>
+  <if test="query.pathId != null">AND path_id=#{query.pathId}</if>
+  <if test="query.dueBefore != null">AND due_at &lt;=#{query.dueBefore}</if>
+ </sql>
+ <select id="countAssignments" resultType="long">SELECT COUNT(*) FROM sa_onboarding_assignment <include refid="assignmentFilter"/></select>
+ <select id="listAssignments" resultType="com.studyagent.onboarding.entity.AssignmentEntity">SELECT * FROM sa_onboarding_assignment <include refid="assignmentFilter"/> ORDER BY create_time DESC,id DESC LIMIT #{offset},#{query.pageSize}</select>
+</mapper>

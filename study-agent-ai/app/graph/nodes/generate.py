@@ -27,6 +27,8 @@ class GenerateAnswerNode:
                 "fileName": chunk["fileName"],
                 "page": chunk.get("page"),
                 "score": chunk.get("score"),
+                "documentVersionId": chunk["documentVersionId"],
+                "knowledgeSnapshotId": chunk["knowledgeSnapshotId"],
             } for chunk in chunks]
         tool_calls = state.get("tool_calls", [])
         if tool_calls:

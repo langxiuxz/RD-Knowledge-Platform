@@ -52,6 +52,8 @@ public class MessagePersistenceService {
             MessageCitationEntity row = new MessageCitationEntity();
             row.setMessageId(assistantMessageId);
             row.setDocumentId(source.documentId());
+            row.setDocumentVersionId(source.documentVersionId());
+            row.setKnowledgeSnapshotId(source.knowledgeSnapshotId());
             row.setChunkId(source.chunkId());
             row.setFileName(source.fileName());
             row.setPage(source.page());

@@ -11,6 +11,9 @@ class AgentState(TypedDict, total=False):
     long_term_memories: List[Dict[str, Any]]
     mode: str
     knowledge_base_id: Optional[int]
+    project_id: Optional[int]
+    knowledge_snapshot_id: Optional[int]
+    allowed_document_version_ids: List[int]
     messages: List[Dict[str, str]]
     retrieved_chunks: List[Dict[str, Any]]
     pending_tool_calls: List[Dict[str, Any]]

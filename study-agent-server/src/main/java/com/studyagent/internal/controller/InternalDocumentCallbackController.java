@@ -11,7 +11,7 @@ public class InternalDocumentCallbackController {
     private final DocumentService documentService;
     public InternalDocumentCallbackController(DocumentService documentService) { this.documentService = documentService; }
 
-    @PostMapping("/internal/callbacks/documents/{documentId}/progress")
+    @PostMapping("/internal/callbacks/document-versions/{documentId}/progress")
     public Result<Void> progress(@PathVariable Long documentId, @Valid @RequestBody DocumentProgressRequest request) {
         documentService.progress(documentId, request); return Result.success();
     }
